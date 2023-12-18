@@ -6,7 +6,7 @@ import numpy as np
 import DelayEmbedding.optimizedDE as optDE
 from pathlib import Path
 
-initpars = yaml.safe_load(Path('/home/ccarnahan/CCMtests/RoozbehImpossibleProject/initparams.yaml').read_text())
+initpars = yaml.safe_load(Path('/home/ccarnahan/CCMtests/RoozbehProject/initparams.yaml').read_text())
 
 if initpars['max_memory'] <= 0:
     ray.init(num_cpus = initpars['num_cpus'], num_gpus = initpars['num_gpus'])
@@ -14,9 +14,7 @@ else:
     # TODO, possibly limit memory to try to make this horrible package possibly safe
     ray.init(num_cpus = initpars['num_cpus'], num_gpus = initpars['num_gpus'])
 
-datapars = dataloader.LoadNumpyParams('/home/ccarnahan/CCMtests/RoozbehImpossibleProject/dataparams.yaml')
-
-
+datapars = dataloader.LoadNumpyParams('/home/ccarnahan/CCMtests/RoozbehProject/dataparams.yaml')
 
 # For testing
 import scipy.io as scio
