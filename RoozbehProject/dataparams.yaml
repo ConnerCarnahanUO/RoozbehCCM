@@ -1,0 +1,12 @@
+dataset: Numpy
+path: /home/ccarnahan/CCMtests/methods_paper_TS.npy
+
+d_min: 1
+d_max: 10
+delay: 1
+n_surrogates: 10
+kfolds: 5
+low_lag: -10
+high_lag: 10
+lag_step: 1
+
