@@ -149,7 +149,7 @@ def SequentialLaggedReconstruction(Predicted,Predictor,nns,test_indices,lags=np.
         reconstruction = np.array([nns[0][idx,:]@curr_predictor[nns[1][idx,:],:] for idx in range(len(test_indices))])
         reconstructions[l] = reconstruction.T
         reconstruction_error[l] = sequential_correlation(reconstruction,np.roll(Predicted,L,axis=0))[0]
-    return reconstructions, reconstruction_error#, np.corrcoef(reconstruction[:,0],Predicted[:,0])
+    return reconstruction_error #reconstructions, reconstruction_error#, np.corrcoef(reconstruction[:,0],Predicted[:,0])
 
 def indexed_SequentialLaggedReconstruction(index,Predicted,Predictor,nns,test_indices,lags=np.array([0])):
     return index, SequentialLaggedReconstruction(Predicted,Predictor,nns,test_indices,lags=lags)
@@ -157,14 +157,28 @@ def indexed_SequentialLaggedReconstruction(index,Predicted,Predictor,nns,test_in
 def reconstruction_column(index,nns,targets,lib_targets,test_indices,lags):
     recon_accuracies = np.zeros((lib_targets.shape[2],lags.shape[0]))
     for i in range(lib_targets.shape[2]):
-        recon_accuracies[i,:] = SequentialLaggedReconstruction(targets[:,:,i],lib_targets[:,:,i],nns,test_indices,lags)[1]
+        recon_accuracies[i,:] = SequentialLaggedReconstruction(targets[:,:,i],lib_targets[:,:,i],nns,test_indices,lags)
     return index, recon_accuracies
 
-def FullCCMColumn(index,targets,lib_targets,afferent,train_indices,test_indices,lags):
-    n_neighbors = targets.shape[1]
-    nbrs = NearestNeighbors(n_neighbors=n_neighbors,algorithm='ball_tree').fit(afferent[train_indices,:])
-    distances, indices = nbrs.kneighbors(afferent[test_indices,:])
-    # This really should scale the distance by 1/min{distances} but it keeps throwing a fit so I am not dealing with that rn
+def FullCCMColumn(index,TimeSeries,afferent,train_indices,test_indices,lags):
+    """ FullCCMColum:
+        args:
+    index:      an argument that is just passed at the end as the first element in the tuple. Can be anything you want to use
+                as an index for this computation
+    TimeSeries: The Full delay embedded timeseries used
+    afferent: Index of the afferent time series
+    train_indices: the indices that are used to create the reconstructions
+    test_indices: The indices that are used to compute the reconstruction accuracy
+    lags: All Lags that are used to make the lagged reconstructions
+    
+    """
+    targets = TimeSeries[test_indices,:,:]
+    lib_targets = TimeSeries[train_indices,:,:]
+    n_neighbors = targets.shape[1]+1
+    nbrs = NearestNeighbors(n_neighbors=n_neighbors,algorithm='ball_tree').fit(TimeSeries[train_indices,:,afferent])
+    distances, indices = nbrs.kneighbors(TimeSeries[test_indices,:,afferent])
+    # TODO? This really should scale the distance by 1/min{distances} but it keeps throwing a fit 
+    #       so I am not dealing with that rn
     weights = np.exp(-distances)
     weights = weights/(weights.sum(axis=1)[:,np.newaxis])
     return reconstruction_column(index,(weights,indices),targets,lib_targets,test_indices,lags)
@@ -371,7 +385,11 @@ def repeated_value_early_stop(vals,n=3):
 
 #%%
 # Main Computation
-def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0, lags=np.arange(-8,9), mask = None, transform='fisher', node_ratio = 0.1, test_pval = True, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = False, max_processes = 64):
+def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
+                     lags=np.arange(-8,9), mask = None, transform='fisher',
+                     node_ratio = 0.1, test_pval = True, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, 
+                     min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = False, 
+                     max_processes = 64):
     """
     """
 
@@ -406,7 +424,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0, lags=np.arange(-8
     time_start = time.time_ns()
 
     print('Finding Optimum Delay')
-    with Pool(max_processes) as p:
+    with Pool(processes=max_processes) as p:
         if delay == 0:
             process_outputs = [[]]*N
             MIDelays = np.zeros(N)
@@ -506,15 +524,26 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0, lags=np.arange(-8
         maxed_fcfs = averaged_accuracy[:,:,pos_lags]
         maxed_fcf_lags = np.nanargmax(maxed_fcfs,axis=2)
         maxed_fcf_lags = np.array([[lags[pos_lags[maxed_fcf_lags[i,j]]] for i in range(N)] for j in range(N)])
+        
+        if save:
+            np.save(save_path+'max_dim_opt_lag.npy',maxed_fcf_lags)
+        
         maxed_fcfs = np.nanmax(maxed_fcfs,axis=2)
         downward_strength = np.nansum(maxed_fcfs,axis=0)
+        
+        efcf_no_diag = efcf
+        for i in range(N):
+            efcf_no_diag[:,i,i,:] = 0
 
-        unordered_hub_nodes = np.flip(np.argsort(np.nansum(np.nanmax(np.nanmean(efcf[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))[:hub_nodes_needed]
+        fcf_ordered = np.flip(np.argsort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))
+        print(f'Hub Rankings: \n channels: {fcf_ordered} \n values:   {np.flip(np.sort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))}')
+        unordered_hub_nodes = np.flip(np.argsort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))[:hub_nodes_needed]
+        
         hub_nodes = np.sort(unordered_hub_nodes)
-        print(f'Hub nodes found: {hub_nodes}')
+        print(f'Hubs to be computed on: {hub_nodes}')
         hub_mask = np.isin(np.arange(N),hub_nodes)
         hub_mask = np.repeat(hub_mask[:,np.newaxis],N,axis=1).T
-        print(f'FCFs to compute for hub nodes: {hub_mask}')
+        #print(f'FCFs to compute for hub nodes: {hub_mask}')
 
         #averaged_corr_accuracy = np.nanmean(eccm,axis=0)
         surrogate_fcfs = None
@@ -645,121 +674,46 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0, lags=np.arange(-8
         # With it parallelized for computing both dim = d_min+i and d_max - i, and a middle dim
         # This generates a curve filled out from both sides and the center, find the elbow of this curve over each i and when it has not changed for a few iterations (heuristic choice) 
         # declare that the early stoping criteria
-        tested_optimium_dims = np.zeros((dim_max-d_min,N,N))*np.nan #np.zeros((dims_to_search.shape[0],N,N))
-        tested_optimium_vals = np.zeros((dim_max-d_min,N,N))*np.nan
-        actual_optimum_dims = np.zeros((N,N))*np.nan
-        actual_optimum_vals = np.zeros((N,N))*np.nan
-
+        tested_optimium_dims = np.ones((dim_max-d_min,N,N))*np.nan #np.zeros((dims_to_search.shape[0],N,N))
+        tested_optimium_vals = np.ones((dim_max-d_min,N,N))*np.nan
+        actual_optimum_dims = np.ones((N,N))*np.nan
+        actual_optimum_vals = np.ones((N,N))*np.nan
 
         opt_num = 0
-        approximate_job_memory_usage = 8*(dim_max+1)*2*kfolds*T
-
+        
         while dims_to_search.shape[0] > 0:
             if not incomplete_pairs.any():
-                break
-            
+                break            
             dims = np.array([dims_to_search[0],dims_to_search[dims_to_search.shape[0] // 2],dims_to_search[-1]])
             dims = np.unique(dims)
             dims_to_search = dims_to_search[~np.isin(dims_to_search,dims)]
             searched_dims[dims-d_min] = True
-            
 
             print(f'Computing CCM for dims: {dims} and {np.argwhere(incomplete_pairs).shape[0]} pairs')
-            curr_rolled_delay_vectors = [[rolled_delay_vectors[i][:,:d,:] for i in range(kfolds)] for d in dims]
             
-            print(incomplete_pairs.shape)
-            print(np.argwhere(incomplete_pairs).shape)
             job_num = 0
             to_check = [[]]*N
             for i,j in np.argwhere(incomplete_pairs):
                 to_check[i] += [j]
                 job_num += 1
             columns = []
-            afferents = np.argwhere(np.any(incomplete_pairs,axis=1))[:,0]
-            jobs = []
-            for i in range(N):
-                if len(to_check[i]) > 0:
-                    columns.append([i,to_check[i]])
-            for i in range(len(columns)):
-                for k in range(kfolds):
-                    for d in dims:
-                        jobs.append([k,columns[i][0],d,columns[i][1],16*N*(test_indices.shape[0])*(d+1)])
-            
-            """jobs = tqdm.tqdm(jobs)
-            process_outputs = tqdm.tqdm([])
-            curr_mem_usage = 0
-            max_mem_usage = 75*10**6
-            while job_num > 0:
-                if curr_mem_usage >= max_mem_usage:
-                    for proc in process_outputs:
-                        item = proc.get()
-                        curr_fcf = item[1]
-                        if transform == 'fisher':
-                            curr_fcf = np.arctanh(curr_fcf)
-                        reconstruction_accuracies[item[0][1],item[0][2],item[0][0],item[0][3],:] = item[1] 
-                        job_num -= 1
-                        curr_mem_usage -= approximate_job_memory_usage
-                    process_outputs = tqdm.tqdm([])
-                else:
-                    kfold, aff, dim, effs, mem_usage = jobs.pop(0)
-                    
-                    process_outputs.append(p.apply_async(FullCCMColumn, args = ([aff,kfold,dim,effs],
-                                                                           targets[kfold][:,:dim,effs],lib_targets[kfold][:,:dim,effs],
-                                                                           rolled_delay_vectors[kfold][:,:,effs],train_indices,test_indices,lags)))
-            """
-            
-            """process_outputs= tqdm.tqdm([p.apply_async(FullCCMColumn, args = ([aff,kfold,dim,effs],
-                                                                           targets[kfold][:,:dim,effs],lib_targets[kfold][:,:dim,effs],
-                                                                           rolled_delay_vectors[kfold][:,:,effs],train_indices,test_indices,lags)) for kfold,aff,dim,effs,mem_usage in jobs])"""
+            afferents = np.argwhere(incomplete_pairs.any(axis=1))[:,0]
 
-            """process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=([afferents[i],k,dims[d],columns[i][1]],
-                                                                           targets[:,:dims[d],columns[i][1]],lib_targets[:,:dims[d],columns[i][1]],
-                                                                           rolled_delay_vectors[k][:,:dims[d],afferents[i]],train_indices,test_indices,lags)) for k in range(kfolds) for d in range(len(dims)) for i in range(len(columns))])
-            """
-            """for iK, proc in enumerate(process_outputs):
-                item = proc.get()
-                curr_fcf = item[1]
-                if transform == 'fisher':
-                    curr_fcf = np.arctanh(curr_fcf)
-                reconstruction_accuracies[item[0][1],item[0][2],item[0][0],item[0][3],:] = item[1]"""
-
-            _all_nns = [[[[]]*N]*kfolds]*dims.shape[0]
-
-            process_outputs = tqdm.tqdm([p.apply_async(remote_build_nn_single, args = ((afferents[i],k,d),curr_rolled_delay_vectors[d][k][:,:,afferents[i]],
-                                                                                       train_indices,test_indices,dims[d]+1)) 
-                                                                                       for k in range(kfolds) for i in range(len(afferents)) for d in range(dims.shape[0])])
-            
-            for iK, proc in enumerate(process_outputs):
-                item = proc.get()
-                aff,kfold,d_curr = item[0]
-                _all_nns[d_curr][kfold][aff] = item[1]
-
-            print('NNS Maps Created, processing reconstructions')
-
-            process_outputs = tqdm.tqdm([p.apply_async(indexed_SequentialLaggedReconstruction,args =([k,i,j,dims[d]],targets[k][:,:dims[d],j],lib_targets[k][:,:dims[d],j],_all_nns[d][k][i],test_indices,lags))
-                                        for k in range(kfolds) for i,j in np.argwhere(incomplete_pairs) for d in range(dims.shape[0])])
-            
-
-            """process_outputs = tqdm.tqdm([p.apply_async(
-                reconstruction_column, 
-                args =([k,columns[i][0],dims[d],columns[i][1]],
-                       _all_nns[d][k][columns[i][0]],
-                       targets[k][:,:dims[d],columns[i][1]],
-                       lib_targets[k][:,:dims[d],columns[i][1]],
-                       test_indices,
-                       lags))
-                                        for k in range(kfolds) for i in range(len(columns)) for d in range(dims.shape[0])])
-            """
-            for iK,out in enumerate(process_outputs):
-                vals = out.get()
-                curr_fcf = vals[1][1]
-                if transform == 'fisher':
-                    curr_fcf = np.arctanh(curr_fcf)
-                reconstruction_accuracies[vals[0][0],vals[0][3]-1,vals[0][1],vals[0][2],:] = curr_fcf
+            for d in range(dims.shape[0]):
+                print(f"Computing FCFs for dim: {dims[d]}")
+                process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=((afferents[i],k,d),rolled_delay_vectors[k],afferents[i],train_indices,test_indices,lags)) for k in range(kfolds) for i in range(len(afferents))])
+                for iK,proc in enumerate(process_outputs):
+                    item = proc.get()
+                    aff,kfold,d_curr = item[0]
+                    curr_fcfs = item[1]
+                    if transform == 'fisher':
+                        curr_fcfs = np.arctanh(curr_fcfs)
+                    reconstruction_accuracies[kfold,d_curr-1,aff,:,:] = curr_fcfs
+                
 
             y = np.array([np.nanmean(reconstruction_accuracies[:,searched_dims,i,j,maxed_fcf_lags[i,j]],axis=0) for i,j in np.argwhere(incomplete_pairs)])[:,0,:]
             #y = np.array([np.nanmax(np.nanmean(reconstruction_accuracies,axis=0)[searched_dims,i,j,:],axis=1) for i,j in np.argwhere(incomplete_pairs)])
-            curr_opts = FindFCFOptimums(test_dims[searched_dims],y,fullrange=True)
+            curr_opts = FindFCFOptimums(test_dims[searched_dims],y,fullrange=False)
             curr_pair = 0
             for i,j in np.argwhere(incomplete_pairs):
                 tested_optimium_dims[opt_num,i,j] = curr_opts[0][curr_pair]
@@ -770,41 +724,51 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0, lags=np.arange(-8
                 check, count_max = repeated_value_early_stop(tested_optimium_dims[:,i,j])
                 incomplete_pairs[i,j] = ~check
                 found_nodes[i,j] = check
-                if check:
+                if check or (dims_to_search.shape[0] == 0):
                     actual_optimum_dims[i,j] = count_max
                     actual_optimum_vals[i,j] = tested_optimium_vals[opt_num,i,j]
+                    tested_optimium_dims[opt_num:,i,j] = count_max
+                    tested_optimium_vals[opt_num:,i,j] = tested_optimium_vals[opt_num,i,j]
             opt_num += 1
+
+        if save:
+            np.save(save_path+'last_computed_fcfs.npy',reconstruction_accuracies)
+            np.save(save_path+'current_optimum_dimensions.npy',tested_optimium_dims)
+            np.save(save_path+'current_optimum_dimensions.npy',tested_optimium_vals)
+
 
         if save:
             np.save(save_path+'almost_all_computed_fcfs.npy',reconstruction_accuracies)
             np.save(save_path+'final_optimum_dimensions.npy',actual_optimum_dims)
 
-        actual_optimum_dims = actual_optimum_dims.astype(int)
-        stopped_too_early = (~np.isnan(actual_optimum_dims))&(np.isnan(actual_optimum_vals))
+        stopped_too_early = np.logical_and(~np.isnan(actual_optimum_dims),np.isnan(actual_optimum_vals))
 
         last_nns = [[[[[]]*N]*N]*kfolds]
-        process_outputs = tqdm.tqdm([p.apply_async(remote_build_nn_single, args = ((i,j,k),rolled_delay_vectors[k][:,:int(actual_optimum_dims[i,j]),i],
-                                                                                       train_indices,test_indices,int(actual_optimum_dims[i,j])+1)) 
-                                                                                       for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
-
-        for ik,out in enumerate(process_outputs):
-            vals = out.get()
-            i,j,k = vals[0]
-            last_nns[k][i][j] = vals[1]
         
-        process_outputs = tqdm.tqdm([p.apply_async(indexed_SequentialLaggedReconstruction,args =([k,i,j],targets[k][:,:int(actual_optimum_dims[i,j]),j],lib_targets[k][:,:int(actual_optimum_dims[i,j]),j],last_nns[k][i][j],test_indices,lags))
-                                        for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
-        
-        for ik, out in enumerate(process_outputs):
-            vals = out.get()
-            k,i,j = vals[0]
-            curr_fcf = vals[1][1]
-            d_opt = int(actual_optimum_dims[i,j])
-            if transform == 'fisher':
-                curr_fcf = np.arctanh(curr_fcf)
-            reconstruction_accuracies[k,d_opt-1,i,j,:] = curr_fcf
-            actual_optimum_vals[i,j] = np.nanmean(reconstruction_accuracies[:,d_opt-1,i,j,maxed_fcf_lags[i,j]])
+        if (np.argwhere(stopped_too_early).shape[0]) > 0:
+            print(f'Still need to compute fcf for pairs: {np.argwhere(stopped_too_early)}')
+            process_outputs = tqdm.tqdm([p.apply_async(remote_build_nn_single, args = ((i,j,k),rolled_delay_vectors[k][:,:int(actual_optimum_dims[i,j]),i],
+                                                                                        train_indices,test_indices,int(actual_optimum_dims[i,j])+1)) 
+                                                                                        for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
 
+            for ik,out in enumerate(process_outputs):
+                vals = out.get()
+                i,j,k = vals[0]
+                last_nns[k][i][j] = vals[1]
+            
+            process_outputs = tqdm.tqdm([p.apply_async(indexed_SequentialLaggedReconstruction,args =([k,i,j],targets[k][:,:int(actual_optimum_dims[i,j]),j],lib_targets[k][:,:int(actual_optimum_dims[i,j]),j],last_nns[k][i][j],test_indices,lags))
+                                            for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
+            
+            for ik, out in enumerate(process_outputs):
+                vals = out.get()
+                k,i,j = vals[0]
+                curr_fcf = vals[1]
+                d_opt = int(actual_optimum_dims[i,j])
+                if transform == 'fisher':
+                    curr_fcf = np.arctanh(curr_fcf)
+                reconstruction_accuracies[k,d_opt-1,i,j,:] = curr_fcf
+                actual_optimum_vals[i,j] = np.nanmean(reconstruction_accuracies[:,d_opt-1,i,j,maxed_fcf_lags[i,j]])
+            
     all_averaged_accuracies = np.nanmean(reconstruction_accuracies,axis=0)
     
     if save:

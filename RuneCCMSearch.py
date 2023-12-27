@@ -1,22 +1,21 @@
-import ray
 import DelayEmbedding.DelayEmbedding as DE
 import yaml
-import RoozbehProject.dataloader as dataloader
+import RoozbehProject.eCCMdataloader as eCCMdataloader
 import numpy as np
 import DelayEmbedding.optimizedDE as optDE
 from pathlib import Path
 
-initpars = yaml.safe_load(Path('/home/ccarnahan/CCMtests/RoozbehProject/initparams.yaml').read_text())
+initpars = yaml.safe_load(Path('./RoozbehProject/initparams.yaml').read_text())
 
-if initpars['max_memory'] <= 0:
-    ray.init(num_cpus = initpars['num_cpus'], num_gpus = initpars['num_gpus'])
-else:
-    # TODO, possibly limit memory to try to make this horrible package possibly safe
-    ray.init(num_cpus = initpars['num_cpus'], num_gpus = initpars['num_gpus'])
+datapars = eCCMdataloader.LoadNumpyParams('./RoozbehProject/dataparams.yaml')
 
-datapars = dataloader.LoadNumpyParams('/home/ccarnahan/CCMtests/RoozbehProject/dataparams.yaml')
+eccm = optDE.ParallelFullECCM(datapars['TS'],dim_max=datapars['d_max'],d_min=datapars['d_min'],normal_pval=datapars['normal_pval'],
+                              save_path=datapars['out_path'],node_ratio=datapars['node_ratio'],lags=np.arange(datapars['low_lag'],datapars['high_lag']+1),
+                              kfolds=datapars['kfolds'],n_surrogates=datapars['n_surrogates'],pval_threshold=datapars['pval_threshold'])
 
-# For testing
+
+
+"""# For testing
 import scipy.io as scio
 from pathlib import Path
 import data_loader as datl
@@ -29,10 +28,4 @@ rate_rest,t_rest,out_rest = g1.load_rest(pm=conf)
 time_series = rate_rest
 
 from signal import signal, SIGPIPE, SIG_DFL
-signal(SIGPIPE,SIG_DFL) 
-
-eccmtest = optDE.ParallelFullECCM(rate_rest,dim_max=30,normal_pval=True,save_path='/home/ccarnahan/CCMtests/testingparallel/roozbeh1/',node_ratio=0.25)
-
-#eccms = DE.ParallelFullECCM(datapars['TS'],datapars['d_min'],datapars['d_max'],datapars['kfolds'],datapars['delay'],
-#                           np.arange(datapars['low_lag'],datapars['high_lag']+1,datapars['lag_step']),n_surrogates=datapars['n_surrogates'],save=True,path = '/home/ccarnahan/CCMtests/RoozbehImpossibleProject')
-
+signal(SIGPIPE,SIG_DFL) """

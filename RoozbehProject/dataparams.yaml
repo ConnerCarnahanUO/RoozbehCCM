@@ -1,12 +1,17 @@
-dataset: Numpy
-path: /home/ccarnahan/CCMtests/methods_paper_TS.npy
+data_type: FIRA
+path: ./DataSets/Niels/N20191210b.FIRA.resting.ustim.PAG.mat
+config_path: ./DataSets/configs/example_configs/G20191106cp.yaml
+out_path: ./outputs/Niels1/
 
 d_min: 1
-d_max: 10
-delay: 1
-n_surrogates: 10
-kfolds: 5
+d_max: 30
+delay: 0
 low_lag: -10
 high_lag: 10
 lag_step: 1
+kfolds: 5
+n_surrogates: 10
+node_ratio: 0.99
+normal_pval: True
+pval_threshold: 1
 
