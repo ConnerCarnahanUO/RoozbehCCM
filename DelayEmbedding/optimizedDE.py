@@ -388,8 +388,8 @@ def repeated_value_early_stop(vals,n=3):
 def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                      lags=np.arange(-8,9), mask = None, transform='fisher',
                      node_ratio = 0.1, test_pval = True, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, 
-                     min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = False, 
-                     max_processes = 64):
+                     min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = True, 
+                     max_processes = 64, early_stop = False):
     """
     """
 
@@ -572,7 +572,6 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             test_indices_surr = test_indices-surr_shape_diff
             print(f'Finished Surrogate Generation in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             
-            # Current fix is to just not change the test set: (Luca says this is what we should always be doing but we werent for a long while)
             eccm_full_process_start_time = time.time_ns()
 
             # Generate nearest maps for all surrogates
@@ -650,7 +649,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         print(f'Required pvalue: {corrected_pval} to satisfy {min_pairs} with {np.argwhere(mask.any(axis=2)).shape[0]} pairs')
 
         #Iterate through dimensions for the elbow
-        dims_to_search = np.arange(d_min,dim_max)
+        dims_to_search = np.arange(d_min,dim_max+1)
         searched_dims = np.zeros(num_dims,dtype=bool)
         searched_dims[-1] = True
         incomplete_pairs = np.repeat(((mask.any(axis=2)).any(axis=0))[:,np.newaxis],N,axis=1).T
@@ -664,11 +663,15 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         #print(f'Significant Pairs: {pandas.DataFrame(np.array(incomplete_pairs,dtype=int))}')
         found_nodes = np.zeros((N,N),dtype=bool)
 
+
         reconstruction_accuracies = np.zeros((kfolds,num_dims,N,N,lags.shape[0]))*np.nan
         #corr_accuracies = np.zeros((num_dims,N,N,lags.shape[0]))*np.nan
         #corr_accuracies[:,-1,:,:,:] = corr_accuracy
         reconstruction_accuracies[:,-1,:,:,:] = efcf
-
+        
+        if os.path.isfile(save_path+'almost_all_computed_fcfs.npy'):
+            reconstruction_accuracies = np.load(save_path+'almost_all_computed_fcfs.npy')
+            
         # Run the parallel like this:
         # Build the array of eFCF values for the significant pairs and compute the eFCF over each dim
         # With it parallelized for computing both dim = d_min+i and d_max - i, and a middle dim
@@ -679,6 +682,9 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         actual_optimum_dims = np.ones((N,N))*np.nan
         actual_optimum_vals = np.ones((N,N))*np.nan
 
+        computed_dims = np.any((~np.isnan(reconstruction_accuracies)),axis=(0,2,3,4))
+
+        dims_to_search = dims_to_search[~computed_dims]
         opt_num = 0
         
         while dims_to_search.shape[0] > 0:
@@ -722,7 +728,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
             for i,j in np.argwhere(incomplete_pairs):
                 check, count_max = repeated_value_early_stop(tested_optimium_dims[:,i,j])
-                incomplete_pairs[i,j] = ~check
+                incomplete_pairs[i,j] = ~check or ~early_stop
                 found_nodes[i,j] = check
                 if check or (dims_to_search.shape[0] == 0):
                     actual_optimum_dims[i,j] = count_max
@@ -743,13 +749,14 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
         stopped_too_early = np.logical_and(~np.isnan(actual_optimum_dims),np.isnan(actual_optimum_vals))
 
-        last_nns = [[[[[]]*N]*N]*kfolds]
+        last_nns = [[[[]]*N]*N]*kfolds
         
         if (np.argwhere(stopped_too_early).shape[0]) > 0:
             print(f'Still need to compute fcf for pairs: {np.argwhere(stopped_too_early)}')
-            process_outputs = tqdm.tqdm([p.apply_async(remote_build_nn_single, args = ((i,j,k),rolled_delay_vectors[k][:,:int(actual_optimum_dims[i,j]),i],
-                                                                                        train_indices,test_indices,int(actual_optimum_dims[i,j])+1)) 
-                                                                                        for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
+            process_outputs = tqdm.tqdm([p.apply_async(remote_build_nn_single, 
+                                        args = ((i,j,k),rolled_delay_vectors[k][:,:int(actual_optimum_dims[i,j]),i],
+                                                train_indices,test_indices,int(actual_optimum_dims[i,j])+1)) 
+                                                for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
 
             for ik,out in enumerate(process_outputs):
                 vals = out.get()
