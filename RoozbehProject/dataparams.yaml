@@ -1,7 +1,8 @@
 data_type: FIRA
-path: ./DataSets/Niels/N20191210b.FIRA.resting.ustim.PAG.mat
-config_path: ./DataSets/configs/example_configs/G20191106cp.yaml
+path: ./DataSets/Round1/round1/unsorted/Niels/N20191109a.FIRA.resting.PAG.mat
+config_path: ./DataSets/configs/example_configs/N20191109.yaml
 out_path: ./outputs/Niels1/
+save: True
 
 d_min: 1
 d_max: 30
@@ -11,7 +12,10 @@ high_lag: 10
 lag_step: 1
 kfolds: 5
 n_surrogates: 10
+retain_test_set: True
 node_ratio: 0.99
 normal_pval: True
 pval_threshold: 1
-
+min_pairs: 10
+dim_search_stopping_num: 3
+early_stop: False

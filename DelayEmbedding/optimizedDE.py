@@ -160,6 +160,8 @@ def reconstruction_column(index,nns,targets,lib_targets,test_indices,lags):
         recon_accuracies[i,:] = SequentialLaggedReconstruction(targets[:,:,i],lib_targets[:,:,i],nns,test_indices,lags)
     return index, recon_accuracies
 
+
+
 def FullCCMColumn(index,TimeSeries,afferent,train_indices,test_indices,lags):
     """ FullCCMColum:
         args:
@@ -649,9 +651,6 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         print(f'Required pvalue: {corrected_pval} to satisfy {min_pairs} with {np.argwhere(mask.any(axis=2)).shape[0]} pairs')
 
         #Iterate through dimensions for the elbow
-        dims_to_search = np.arange(d_min,dim_max+1)
-        searched_dims = np.zeros(num_dims,dtype=bool)
-        searched_dims[-1] = True
         incomplete_pairs = np.repeat(((mask.any(axis=2)).any(axis=0))[:,np.newaxis],N,axis=1).T
         print(f'Checking mask sizes: hub_mask={hub_mask.shape}, pvalue mask: {incomplete_pairs.shape}')
         incomplete_pairs &= hub_mask
@@ -682,9 +681,9 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         actual_optimum_dims = np.ones((N,N))*np.nan
         actual_optimum_vals = np.ones((N,N))*np.nan
 
-        computed_dims = np.any((~np.isnan(reconstruction_accuracies)),axis=(0,2,3,4))
+        searched_dims = np.any((~np.isnan(reconstruction_accuracies)),axis=(0,2,3,4))
 
-        dims_to_search = dims_to_search[~computed_dims]
+        dims_to_search = np.arange(d_min,dim_max+1)[~searched_dims]
         opt_num = 0
         
         while dims_to_search.shape[0] > 0:
@@ -707,15 +706,14 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
             for d in range(dims.shape[0]):
                 print(f"Computing FCFs for dim: {dims[d]}")
-                process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=((afferents[i],k,d),rolled_delay_vectors[k],afferents[i],train_indices,test_indices,lags)) for k in range(kfolds) for i in range(len(afferents))])
+                process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=((afferents[i],k,dims[d]),rolled_delay_vectors[k][:,:dims[d],:],afferents[i],train_indices,test_indices,lags)) for k in range(kfolds) for i in range(len(afferents))])
                 for iK,proc in enumerate(process_outputs):
                     item = proc.get()
                     aff,kfold,d_curr = item[0]
                     curr_fcfs = item[1]
                     if transform == 'fisher':
                         curr_fcfs = np.arctanh(curr_fcfs)
-                    reconstruction_accuracies[kfold,d_curr-1,aff,:,:] = curr_fcfs
-                
+                    reconstruction_accuracies[kfold,d_curr-1,aff,:,:] = curr_fcfs 
 
             y = np.array([np.nanmean(reconstruction_accuracies[:,searched_dims,i,j,maxed_fcf_lags[i,j]],axis=0) for i,j in np.argwhere(incomplete_pairs)])[:,0,:]
             #y = np.array([np.nanmax(np.nanmean(reconstruction_accuracies,axis=0)[searched_dims,i,j,:],axis=1) for i,j in np.argwhere(incomplete_pairs)])
