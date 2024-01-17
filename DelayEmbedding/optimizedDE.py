@@ -17,7 +17,7 @@ import tqdm
 from tqdm.contrib.concurrent import process_map
 import os
 import sys
-import pandas
+import pandas as pd
 
 #%%
 # Main computation helper functions
@@ -391,7 +391,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                      lags=np.arange(-8,9), mask = None, transform='fisher',
                      node_ratio = 0.1, test_pval = True, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, 
                      min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = True, 
-                     max_processes = 64, early_stop = False):
+                     max_processes = 64, early_stop = False, only_hubs = False):
     """
     """
 
@@ -537,8 +537,20 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         for i in range(N):
             efcf_no_diag[:,i,i,:] = 0
 
-        fcf_ordered = np.flip(np.argsort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))
-        print(f'Hub Rankings: \n channels: {fcf_ordered} \n values:   {np.flip(np.sort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))}')
+        hub_fcf_ordered = np.flip(np.argsort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))
+        fcf_ordered = np.flip(np.sort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))
+
+        hub_rank_data = {'Channel': hub_fcf_ordered, 'Hubness': fcf_ordered}
+
+        df = pd.DataFrame(hub_rank_data)
+
+        df.to_csv(save_path+'hub_rankings.csv',sep=',', na_rep='Null')
+
+        print(f'Hub Rankings: \n channels: {hub_fcf_ordered} \n values:   {np.flip(np.sort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))}')
+        
+        if only_hubs:
+            return
+        
         unordered_hub_nodes = np.flip(np.argsort(np.nansum(np.nanmax(np.nanmean(efcf_no_diag[:,:,:,(lags >= 0)],axis=0),axis=2),axis=0)))[:hub_nodes_needed]
         
         hub_nodes = np.sort(unordered_hub_nodes)
