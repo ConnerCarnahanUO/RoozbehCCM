@@ -19,3 +19,4 @@ pval_threshold: 1
 min_pairs: 10
 dim_search_stopping_num: 3
 early_stop: False
+only_hubs: True
