@@ -11,8 +11,9 @@ datapars = eCCMdataloader.LoadNumpyParams('./RoozbehProject/dataparams.yaml')
 
 eccm = optDE.ParallelFullECCM(datapars['TS'],dim_max=datapars['d_max'],d_min=datapars['d_min'],normal_pval=datapars['normal_pval'],
                               save_path=datapars['out_path'],node_ratio=datapars['node_ratio'],lags=np.arange(datapars['low_lag'],datapars['high_lag']+1),
-                              kfolds=datapars['kfolds'],n_surrogates=datapars['n_surrogates'],pval_threshold=datapars['pval_threshold'],
-                              retain_test_set=datapars['retain_test_set'],early_stop=datapars['early_stop'],min_pairs=datapars['min_pairs'],only_hubs=datapars['only_hubs'])
+                              kfolds=datapars['kfolds'],compute_pvalue=datapars['compute_pvalue'],n_surrogates=datapars['n_surrogates'],pval_threshold=datapars['pval_threshold'],
+                              retain_test_set=datapars['retain_test_set'],early_stop=datapars['early_stop'],min_pairs=datapars['min_pairs'],
+                              only_hubs=datapars['only_hubs'], find_optimum_dims=datapars['find_optimum_dims'])
 
 
 

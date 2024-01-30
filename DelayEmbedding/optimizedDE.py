@@ -209,6 +209,10 @@ def sequential_correlation(trails1,trails2):
 
 def SurrGen(channel,X,ind,L,eln,seed=0):
     #print(X.shape)
+    if seed == 0:
+        np.random.seed(time.time_ns()%(2**32-1))
+    else:
+        np.random.seed(seed)
     kn=np.random.randint(0,L,1)[0]-1
     surr = np.zeros(L)
     for j in range(L):
@@ -220,7 +224,7 @@ def SurrGen(channel,X,ind,L,eln,seed=0):
     return channel, surr
 
 def indexed_SurrGen(index,channel,X,ind,L,eln,seed=0):
-    return index, SurrGen(channel,X,ind,L,eln,seed=0)[1]
+    return index, SurrGen(channel,X,ind,L,eln,seed=seed)[1]
 
 def SurrogateMap(X,channel):
     nbrs = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(X)
@@ -237,35 +241,35 @@ def SurrogateMap(X,channel):
     eln = [len(i) for i in ind]
     return channel, ind, eln
 
-def indexed_SurrogateMap(X,channel,kfold):
+def indexed_SurrogateMap(passthrough,X,channel):
     channel, ind, eln = SurrogateMap(X,channel)
-    return (kfold,channel), ind, eln
+    return passthrough, ind, eln
 
-def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64):
+def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
     '''Create twin surrogates for significance evaluation and hypothesis testing with each surrogate created in parallel
     
     Args:
-        X (numpy.ndarray): (Channel x Dimension x Time) multivariate signal for which we want to generate surrogate time series
+        X (numpy.ndarray): (Dimension x Time x Channels) multivariate signal for which we want to generate surrogate time series
         N (integer): Number of surrogate datasets to be created
         
     Returns:
         numpy.ndarray: Generated twin surrogate dataset
     '''
-    kfolds = len(X)
-    T,D,C = X[0].shape
+    np.random.seed(seed)
+    T,D,C = X.shape
 
-    elns = [[[]]*C]*kfolds
-    inds = [[[]]*C]*kfolds
+    elns = [[]]*C
+    inds = [[]]*C
 
     surrogate_time = time.time_ns()
     #Generate the surrogate swapping indices for each channel in parallel
-    with Pool(max_processes,initializer=MuteMultiprocessing) as p:
-        processes = tqdm.tqdm([p.apply_async(indexed_SurrogateMap,args = (X[k][:,:,channel],channel,k)) for channel in range(C) for k in range(kfolds)])
+    with Pool(processes=max_processes) as p:
+        processes = tqdm.tqdm([p.apply_async(indexed_SurrogateMap,args = (channel,X[:,:,channel],channel)) for channel in range(C)],desc='Surrogate NNS')
 
         for proc in processes:
             curr_map = proc.get()
-            elns[curr_map[0][0]][curr_map[0][1]] = curr_map[2]
-            inds[curr_map[0][0]][curr_map[0][1]] = curr_map[1]
+            elns[curr_map[0]] = curr_map[2]
+            inds[curr_map[0]] = curr_map[1]
     
     print(f'Surrogate Map generation time: {(time.time_ns()-surrogate_time)*10**-9} s')
     """    for channel in range(C):
@@ -284,16 +288,30 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64):
         inds[channel] = ind
         elns[channel] = [len(i) for i in ind]"""
 
-    surrs = [[[[]]*C]*kfolds]*N
-
+    surrs = [[[]]*C]*N
+    
     # Generate all of the surrogates in parallel for each channel
-    with Pool(max_processes,initializer=MuteMultiprocessing) as p:    
-        processes = tqdm.tqdm([p.apply_async(indexed_SurrGen, args = ((k,channel,sn),channel,X[k][:,:,channel],inds[k][channel],T,elns[k][channel])) for sn in range(N) for channel in range(C) for k in range(kfolds)])
+    
+    seeds = np.random.randint(0,2**32-1,N)
+    for sn in range(N):
+        surrs[sn] = np.zeros((T,C))
+        for channel in range(C):
+            kn=np.random.randint(0,T,1)[0]-1
+            #surrs[sn][0,channel] = np.zeros(T)
+            for j in range(T):
+                kn += 1
+                surrs[sn][j,channel] = X[kn,0,channel]
+                kn = inds[channel][kn][np.random.randint(0,elns[channel][kn],1)[0]]
+                if kn==T-1:
+                    kn=T//2
+    #with Pool(max_processes) as p:    
+    #    processes = tqdm.tqdm([p.apply_async(indexed_SurrGen, args = ((channel,sn),channel,X[:,:,channel],inds[channel],T,elns[channel],seeds[sn])) 
+    #                           for sn in range(N) for channel in range(C)],desc='Surrogate Creation')
     
     #Load all surrogates into the surrogate array
-        for channel_process in processes:
-            surr = channel_process.get()
-            surrs[surr[0][2]][surr[0][0]][surr[0][1]] = surr[1]
+    #    for channel_process in processes:
+    #        surr = channel_process.get()
+    #        surrs[surr[0][1]][surr[0][0]] = surr[1]
 
         """for channel_proccesses in processes:
             i = 0
@@ -303,9 +321,9 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64):
                 i+=1"""
 
     #reshape surrogate lists into np arrays:
-    surrs = [[np.vstack(surrs[i][k]).T for k in range(kfolds)] for i in range(N)]
+    #surrs = [np.vstack(surrs[i][:]).T for i in range(N)]
     
-    print(surrs[0][0].shape)
+    #print(surrs[0]-surrs[1])
 
     return surrs
 
@@ -389,9 +407,9 @@ def repeated_value_early_stop(vals,n=3):
 # Main Computation
 def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                      lags=np.arange(-8,9), mask = None, transform='fisher',
-                     node_ratio = 0.1, test_pval = True, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, 
+                     node_ratio = 0.1, test_pval = True, compute_pvalue = False, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, 
                      min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = True, 
-                     max_processes = 64, early_stop = False, only_hubs = False):
+                     max_processes = 64, early_stop = False, only_hubs = False, find_optimum_dims = False, seed = 0):
     """
     """
 
@@ -423,6 +441,9 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         global X
         return X"""
     
+    if seed == 0:
+        np.random.seed(time.time_ns()%(2**32-1))
+    
     time_start = time.time_ns()
 
     print('Finding Optimum Delay')
@@ -430,7 +451,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         if delay == 0:
             process_outputs = [[]]*N
             MIDelays = np.zeros(N)
-            process_outputs = tqdm.tqdm([p.apply_async(remote_ApproximatebestTau, args = (i,X[:,i],0,10,50,False,0.1)) for i in range(N)])
+            process_outputs = tqdm.tqdm([p.apply_async(remote_ApproximatebestTau, args = (i,X[:,i],0,10,50,False,0.1)) for i in range(N)],desc='Mutual Information')
             for out in process_outputs:
                 MIDelays[out.get()[0]] = out.get()[1]
             delay = int(np.max([1,np.min(MIDelays)]))
@@ -471,12 +492,12 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             eccm_full_process_start_time = time.time_ns()
             # build the weight matrices for all the variables and folds
             all_nns = [[[]]*N]*kfolds
-            print('Building CCM Mappings')
+            #print('Building CCM Mappings')
             process_outputs =tqdm.tqdm([p.apply_async(remote_build_nn_single,
                                                     args = ((k,j),rolled_delay_vectors[k][:,:,j],
                                                             train_indices,test_indices,
                                                             dim_max+1))
-                                                            for j in range(N) for k in range(kfolds)])
+                                                            for j in range(N) for k in range(kfolds)],desc=f'NNS')
             
             for proc in process_outputs:
                 item = proc.get()
@@ -484,31 +505,17 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             reconstruction_accuracy = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
             #corr_accuracy = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
 
-            print(f'First round NNS computed in {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+            #print(f'First round NNS computed in {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             eccm_full_process_start_time = time.time_ns()
-            
-            """process_outputs = [p.apply_async(indexed_remote_LaggedReconstruction,
-                                    args = (([k,n,m,l],np.roll(targets[k][:,:,n],lags[l],axis=0)[:,:], np.roll(lib_targets[k][:,:,m],lags[l],axis=0),all_nns[k][n],test_indices)))
-                                    for k in range(kfolds) for l in range(lags.shape[0])
-                                    for n in range(N) for m in range(N)]"""
-            """process_outputs = tqdm.tqdm([p.apply_async(indexed_SequentialLaggedReconstruction,
-                                    args = (([k,i,j],targets[k][:,:,j], lib_targets[k][:,:,j], all_nns[k][i], test_indices, lags)))
-                                    for k in range(kfolds)
-                                    for i in range(N) for j in range(N)])
-            
-            for proc in process_outputs:
-                item = proc.get()
-                reconstruction_accuracy[item[0][0],item[0][1],item[0][2],:] = item[1][1]
-                #corr_accuracy[item[0][0],item[0][1],item[0][2],item[0][3]] = item[1][1][1]"""
 
             process_outputs = tqdm.tqdm([p.apply_async(reconstruction_column,args=((k,n),all_nns[k][n],targets[k],lib_targets[k],test_indices,lags))
-                                        for n in range(N) for k in range(kfolds)])
+                                        for n in range(N) for k in range(kfolds)],desc='Reconstructing')
 
             for proc in process_outputs:
                 item = proc.get()
                 reconstruction_accuracy[item[0][0],item[0][1],:,:] = item[1]
             
-            print(f'Processed reconstructions in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+            #print(f'Processed reconstructions in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             
             efcf = reconstruction_accuracy
             #eccm = corr_accuracy
@@ -563,64 +570,119 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         surrogate_fcfs = None
         surrogates = None
 
+        if os.path.isdir(save_path+'/surrogates'):
+            surrogates = [[[]]*kfolds]*n_surrogates
+            for f in os.listdir(save_path+'/surrogates'):
+                sn = int(f[-7])
+                k = int(f[-5])
+                surrogates[k][sn] = np.load(save_path+'/surrogates/'+f)
+        
         if os.path.isfile(save_path+'surrogate_fcf.npy'):
             surrogate_fcfs = np.load(save_path+'surrogate_fcf.npy')
-            surrogates = np.load(save_path+'surrogates.npy')
-
-        else:
+        elif compute_pvalue:
             # Compute the significance intervals
             # Create Surrogate time series: n_surrogate list of NxT time series
             print('Creating twin surrogates')
             
             eccm_full_process_start_time = time.time_ns()
+            already_made = True
             
-            surrogates = parallel_twin_surrogates(lib_targets,N=n_surrogates,Tshift = tShift)
-            
-            # Create delay vectors for all time series
-            surrogate_delays = [[np.concatenate(list(map(lambda x: create_delay_vector(x,delay,dim_max)[:,:,np.newaxis], surrogates[n][k].T)),2) for k in range(kfolds)] for n in range(n_surrogates)]
-            surrogate_delays = [[np.concatenate((surrogate_delays[n][k],rolled_delay_vectors[k][test_indices,:,:]),0) for k in range(kfolds)] for n in range(n_surrogates)]
-            
-            print(surrogate_delays[0][0].shape[0]-X.shape[0])
-            surr_shape_diff = abs(surrogate_delays[0][0].shape[0]-X.shape[0])
-            train_indices_surr = train_indices[:-surr_shape_diff]
-            test_indices_surr = test_indices-surr_shape_diff
+            surr_data = rolled_delay_vectors
+            if retain_test_set:
+                surr_data = lib_targets
+            if surrogates is None:
+                surrogates = [[]]*kfolds
+                already_made = False
+                for k in range(kfolds):
+                    print(f'Surrogates for fold {k}')
+                    surrogates[k] = parallel_twin_surrogates(surr_data[k],N=n_surrogates,Tshift = tShift,seed=np.random.randint(0,2**32-1,1)[0])
+
+            if save and not already_made:
+                if not os.path.isdir(save_path+'/surrogates'):
+                    os.mkdir(save_path+'/surrogates')
+                for k in range(kfolds):
+                    for n in range(n_surrogates):
+                        np.save(save_path+'/surrogates/'+f'surrogate{n},{k}.npy',surrogates[k][n]) 
+
+            surrogate_fcfs = np.zeros((n_surrogates,kfolds,N,N,1))
             print(f'Finished Surrogate Generation in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             
             eccm_full_process_start_time = time.time_ns()
 
             # Generate nearest maps for all surrogates
-            surrogate_nns = [[[[]]*N]*kfolds]*n_surrogates
-            process_outputs = tqdm.tqdm([ p.apply_async(remote_build_nn_single, 
-                                                        args = ((k,hub_nodes[j],n),surrogate_delays[n][k][:,:,hub_nodes[j]],train_indices_surr,test_indices_surr,dim_max+1)) 
-                                                        for j in range(hub_nodes_needed) for k in range(kfolds) for n in range(n_surrogates)])
-            
-            for proc in process_outputs:
-                item = proc.get()
-                surrogate_nns[item[0][2]][item[0][0]][item[0][1]] = item[1]
-            
-            print(f'Finished Surrogate CCM Mappings in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+            completed_surrs = np.zeros(n_surrogates,dtype = bool)
 
-            eccm_full_process_start_time = time.time_ns()
+            if os.path.isfile(save_path+'completed_surrs.npy'):
+                completed_surrs = np.load(save_path+'completed_surrs.npy')
 
-            # Compute the fcfs
-            surrogate_fcfs = np.zeros((n_surrogates,kfolds,N,N,1))
-            processes = tqdm.tqdm([p.apply_async(reconstruction_column,
-                                    args = ([k,hub_nodes[i],sn],surrogate_nns[sn][k][hub_nodes[i]],targets[k], surrogate_delays[sn][k],test_indices_surr[:],np.array([0])))
-                                    for k in range(kfolds) for sn in range(n_surrogates)
-                                    for i in range(hub_nodes_needed)])
+            for sn in range(n_surrogates):
+                if completed_surrs[sn]:
+                    continue
 
-            for proc in processes:
-                item = proc.get()
-                surrogate_fcfs[item[0][2],item[0][0],item[0][1],:,0] = item[1][1]
+                surrogate_nns = [[[]]*N]*kfolds
 
-            print(f'Finished Surrogate Reconstructions in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+                surrogate_delays = [np.concatenate(list(map(lambda x: create_delay_vector(x,delay,dim_max)[:,:,np.newaxis], surrogates[k][sn].T)),2) for k in range(kfolds)]
+                if retain_test_set:
+                    surrogate_delays = [np.concatenate((surrogate_delays[k],rolled_delay_vectors[k][test_indices,:,:]),axis=0) for k in range(kfolds)]
+
+                surr_shape_diff = abs(surrogate_delays[0].shape[0]-X.shape[0])
+                train_indices_surr = train_indices[:-surr_shape_diff]
+                test_indices_surr = test_indices-surr_shape_diff
+
+                if retain_test_set:
+                    process_outputs = tqdm.tqdm([ p.apply_async(remote_build_nn_single, 
+                                                            args = ((k,hub_nodes[j],sn),surrogate_delays[k][:,:,hub_nodes[j]],
+                                                                    train_indices_surr,test_indices_surr,dim_max+1)) 
+                                                            for j in range(hub_nodes_needed) for k in range(kfolds)],desc=f'NNS {sn}')
+                
+                    for proc in process_outputs:
+                        item = proc.get()
+                        surrogate_nns[item[0][0]][item[0][1]] = item[1]
+                
+                    processes = tqdm.tqdm([p.apply_async(reconstruction_column,
+                                            args = ([k,hub_nodes[i],sn],surrogate_nns[k][hub_nodes[i]],targets[k], surrogate_delays[k],test_indices_surr,np.array([0])))
+                                            for k in range(kfolds) for i in range(hub_nodes_needed)],desc=f'Reconstructions {sn}')
+
+                    for proc in processes:
+                        item = proc.get()
+                        surrogate_fcfs[item[0][2],item[0][0],item[0][1],:,:] = item[1]
+                else:
+                    #TODO
+                    process_outputs = tqdm.tqdm([ p.apply_async(remote_build_nn_single, 
+                                                            args = ((0,hub_nodes[j],sn),surrogate_delays[:,:,hub_nodes[j]],
+                                                                    train_indices_surr,test_indices_surr,dim_max+1)) 
+                                                            for j in range(hub_nodes_needed)],desc=f'NNS {sn}')
+                
+                    for proc in process_outputs:
+                        item = proc.get()
+                        for k in range(kfolds):
+                            surrogate_nns[k][item[0][1]] = item[1]
+                #print(f'Finished Surrogate CCM Mappings in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+
+
+                # Compute the fcf
+                    processes = tqdm.tqdm([p.apply_async(reconstruction_column,
+                                            args = ([0,hub_nodes[i],sn],surrogate_nns[k][hub_nodes[i]],targets[k], surrogate_delays[k],test_indices_surr[:],np.array([0])))
+                                            for i in range(hub_nodes_needed)],desc=f'Reconstructions {sn}')
+
+                    for proc in processes:
+                        item = proc.get()
+                        for k in kfolds:
+                            surrogate_fcfs[item[0][2],k,item[0][1],:,0] = item[1]
+
+                completed_surrs[sn] = True
+                
+                if save:
+                    np.save(save_path+'intermediate_surrogate_fcf.npy',surrogate_fcfs)
+                    np.save(save_path+'completed_surrs.npy',completed_surrs)
+
+            print(f'Finished Surrogate evaluation in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
 
             if transform == 'fisher':
                 surrogate_fcfs = np.arctanh(surrogate_fcfs)
 
             if save:
                 np.save(save_path+'surrogate_fcf.npy',surrogate_fcfs)
-                np.save(save_path+'surrogates.npy',surrogates)
 
         pvals = np.zeros((N,N,lags.shape[0]))*np.nan
         avgd_surrogate_fcfs = np.nanmean(surrogate_fcfs,axis=0)
@@ -670,7 +732,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         if save:
             np.save(save_path+'significant_hub_nodes.npy', np.argwhere(np.any(incomplete_pairs,axis=0))[:,0])
 
-
+    
         #print(f'Significant Pairs: {pandas.DataFrame(np.array(incomplete_pairs,dtype=int))}')
         found_nodes = np.zeros((N,N),dtype=bool)
 
@@ -698,6 +760,9 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         dims_to_search = np.arange(d_min,dim_max+1)[~searched_dims]
         opt_num = 0
         
+        if not find_optimum_dims:
+            return
+
         while dims_to_search.shape[0] > 0:
             if not incomplete_pairs.any():
                 break            
@@ -717,8 +782,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             afferents = np.argwhere(incomplete_pairs.any(axis=1))[:,0]
 
             for d in range(dims.shape[0]):
-                print(f"Computing FCFs for dim: {dims[d]}")
-                process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=((afferents[i],k,dims[d]),rolled_delay_vectors[k][:,:dims[d],:],afferents[i],train_indices,test_indices,lags)) for k in range(kfolds) for i in range(len(afferents))])
+                process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=((afferents[i],k,dims[d]),rolled_delay_vectors[k][:,:dims[d],:],afferents[i],train_indices,test_indices,lags)) 
+                                             for k in range(kfolds) for i in range(len(afferents))],desc=f'FCF for {dims[d]}')
                 for iK,proc in enumerate(process_outputs):
                     item = proc.get()
                     aff,kfold,d_curr = item[0]
@@ -752,7 +817,6 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             np.save(save_path+'current_optimum_dimensions.npy',tested_optimium_dims)
             np.save(save_path+'current_optimum_dimensions.npy',tested_optimium_vals)
 
-
         if save:
             np.save(save_path+'almost_all_computed_fcfs.npy',reconstruction_accuracies)
             np.save(save_path+'final_optimum_dimensions.npy',actual_optimum_dims)
@@ -766,7 +830,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             process_outputs = tqdm.tqdm([p.apply_async(remote_build_nn_single, 
                                         args = ((i,j,k),rolled_delay_vectors[k][:,:int(actual_optimum_dims[i,j]),i],
                                                 train_indices,test_indices,int(actual_optimum_dims[i,j])+1)) 
-                                                for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
+                                                for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)],desc='Final NNS')
 
             for ik,out in enumerate(process_outputs):
                 vals = out.get()
@@ -774,7 +838,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 last_nns[k][i][j] = vals[1]
             
             process_outputs = tqdm.tqdm([p.apply_async(indexed_SequentialLaggedReconstruction,args =([k,i,j],targets[k][:,:int(actual_optimum_dims[i,j]),j],lib_targets[k][:,:int(actual_optimum_dims[i,j]),j],last_nns[k][i][j],test_indices,lags))
-                                            for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)])
+                                            for k in range(kfolds) for i,j in np.argwhere(stopped_too_early)],desc='Final Reconstructions')
             
             for ik, out in enumerate(process_outputs):
                 vals = out.get()
