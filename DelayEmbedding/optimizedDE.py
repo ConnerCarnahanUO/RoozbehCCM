@@ -143,22 +143,26 @@ def CCMReconstruction(Predicted,Predictor,nns,test_indices):
 def SequentialLaggedReconstruction(Predicted,Predictor,nns,test_indices,lags=np.array([0])):
     reconstructions = [[]]*lags.shape[0]
     reconstruction_error = np.zeros(lags.shape[0])
+    reconstruction_corr = np.zeros(lags.shape[0])
     for l in range(lags.shape[0]):
         L = lags[l]
         curr_predictor = np.roll(Predictor,L,axis=0)
         reconstruction = np.array([nns[0][idx,:]@curr_predictor[nns[1][idx,:],:] for idx in range(len(test_indices))])
         reconstructions[l] = reconstruction.T
         reconstruction_error[l] = sequential_correlation(reconstruction,np.roll(Predicted,L,axis=0))[0]
-    return reconstruction_error #reconstructions, reconstruction_error#, np.corrcoef(reconstruction[:,0],Predicted[:,0])
+        reconstruction_corr[l] = np.corrcoef(reconstruction[:,0],np.roll(Predicted,L,axis=0)[:,0])[0,1]
+    return reconstruction_error, reconstruction_corr #reconstructions, reconstruction_error#, np.corrcoef(reconstruction[:,0],Predicted[:,0])
 
 def indexed_SequentialLaggedReconstruction(index,Predicted,Predictor,nns,test_indices,lags=np.array([0])):
-    return index, SequentialLaggedReconstruction(Predicted,Predictor,nns,test_indices,lags=lags)
+    slr = SequentialLaggedReconstruction(Predicted,Predictor,nns,test_indices,lags=lags)
+    return index, slr[0], slr[1]
 
 def reconstruction_column(index,nns,targets,lib_targets,test_indices,lags):
     recon_accuracies = np.zeros((lib_targets.shape[2],lags.shape[0]))
+    recon_corrs = np.zeros((lib_targets.shape[2],lags.shape[0]))
     for i in range(lib_targets.shape[2]):
-        recon_accuracies[i,:] = SequentialLaggedReconstruction(targets[:,:,i],lib_targets[:,:,i],nns,test_indices,lags)
-    return index, recon_accuracies
+        recon_accuracies[i,:], recon_corrs[i,:] = SequentialLaggedReconstruction(targets[:,:,i],lib_targets[:,:,i],nns,test_indices,lags)
+    return index, recon_accuracies, recon_corrs
 
 
 
@@ -245,7 +249,21 @@ def indexed_SurrogateMap(passthrough,X,channel):
     channel, ind, eln = SurrogateMap(X,channel)
     return passthrough, ind, eln
 
-def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
+def Curr_channel_Gen(channel,X_channel,ind,eln,T,n_surrogates):
+    np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
+    curr_surrs = [[]]*n_surrogates
+    for sn in range(n_surrogates):
+        kn = np.random.randint(0,T,1)[0]-1
+        curr_surrs[sn] = np.zeros(T)
+        for j in range(T):
+            kn+=1
+            curr_surrs[sn][j] = X_channel[kn,0]
+            kn = ind[kn][np.random.randint(0,eln[kn],1)[0]]
+            if kn == T-1:
+                kn = T//2
+    return channel, curr_surrs
+
+def parallel_twin_surrogates(X,n_surrogates,Tshift=0,max_processes=64,seed=0):
     '''Create twin surrogates for significance evaluation and hypothesis testing with each surrogate created in parallel
     
     Args:
@@ -262,6 +280,8 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
     inds = [[]]*C
 
     surrogate_time = time.time_ns()
+    surrs = [[]]*n_surrogates
+
     #Generate the surrogate swapping indices for each channel in parallel
     with Pool(processes=max_processes) as p:
         processes = tqdm.tqdm([p.apply_async(indexed_SurrogateMap,args = (channel,X[:,:,channel],channel)) for channel in range(C)],desc='Surrogate NNS')
@@ -271,8 +291,8 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
             elns[curr_map[0]] = curr_map[2]
             inds[curr_map[0]] = curr_map[1]
     
-    print(f'Surrogate Map generation time: {(time.time_ns()-surrogate_time)*10**-9} s')
-    """    for channel in range(C):
+        print(f'Surrogate Map generation time: {(time.time_ns()-surrogate_time)*10**-9} s')
+        """    for channel in range(C):
 
         nbrs = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(X)
         d, indices = nbrs.kneighbors(X[:,:,C])
@@ -288,12 +308,24 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
         inds[channel] = ind
         elns[channel] = [len(i) for i in ind]"""
 
-    surrs = [[[]]*C]*N
-    
-    # Generate all of the surrogates in parallel for each channel
-    
-    seeds = np.random.randint(0,2**32-1,N)
-    for sn in range(N):
+        
+        for sn in range(n_surrogates):
+            surrs[sn] = np.zeros((T,C))
+        # Generate all of the surrogates in parallel for each channel
+        
+        seeds = np.random.randint(0,2**32-1,n_surrogates)
+
+        
+        
+        channel_proccesses = tqdm.tqdm([p.apply_async(Curr_channel_Gen,args=(c,X[:,:,c],inds[c],elns[c],T,n_surrogates)) for c in range(C)])
+
+        for proc in channel_proccesses:
+            channel, curr_surrs = proc.get()
+            for sn in range(n_surrogates):
+                surrs[sn][:,channel] = curr_surrs[sn]
+
+
+    """for sn in range(n_surrogates):
         surrs[sn] = np.zeros((T,C))
         for channel in range(C):
             kn=np.random.randint(0,T,1)[0]-1
@@ -303,7 +335,7 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
                 surrs[sn][j,channel] = X[kn,0,channel]
                 kn = inds[channel][kn][np.random.randint(0,elns[channel][kn],1)[0]]
                 if kn==T-1:
-                    kn=T//2
+                    kn=T//2"""
     #with Pool(max_processes) as p:    
     #    processes = tqdm.tqdm([p.apply_async(indexed_SurrGen, args = ((channel,sn),channel,X[:,:,channel],inds[channel],T,elns[channel],seeds[sn])) 
     #                           for sn in range(N) for channel in range(C)],desc='Surrogate Creation')
@@ -313,7 +345,7 @@ def parallel_twin_surrogates(X,N,Tshift=0,max_processes=64,seed=0):
     #        surr = channel_process.get()
     #        surrs[surr[0][1]][surr[0][0]] = surr[1]
 
-        """for channel_proccesses in processes:
+    """for channel_proccesses in processes:
             i = 0
             for sn in channel_proccesses:
                 surr = sn.get()
@@ -436,6 +468,9 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
     T,N = X.shape
     # If a delay is not given, take the test delay to be the average of the Mutual information method approximations for all time series given
     
+    if not os.path.isdir(save_path):
+        os.mkdir(save_path)
+
     hub_nodes_needed = int(np.ceil(node_ratio*N))
     """def X_ref():
         global X
@@ -485,6 +520,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         lib_targets = [rolled_delay_vectors[k][train_indices,:,:] for k in range(kfolds)]
 
         efcf = None
+        eccm = None
         if os.path.isfile(save_path + f'eFCFTensorXValidated_dim{dim_max}_delay{delay}.npy'):
             efcf = np.load(save_path + f'eFCFTensorXValidated_dim{dim_max}_delay{delay}.npy')
             #np.save(path + f'eCCMTensorXValidated_dim{d_max}_delay{delay}.npy',eccm)
@@ -503,6 +539,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 item = proc.get()
                 all_nns[item[0][0]][item[0][1]] = item[1]
             reconstruction_accuracy = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
+            eccm = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
+
             #corr_accuracy = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
 
             #print(f'First round NNS computed in {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
@@ -514,17 +552,19 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             for proc in process_outputs:
                 item = proc.get()
                 reconstruction_accuracy[item[0][0],item[0][1],:,:] = item[1]
+                eccm[item[0][0],item[0][1],:,:] = item[2]
             
             #print(f'Processed reconstructions in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             
             efcf = reconstruction_accuracy
+
             #eccm = corr_accuracy
             if transform == 'fisher':
                 efcf = np.arctanh(efcf)
-                #eccm = np.arctanh(eccm)
+                eccm = np.arctanh(eccm)
         if save:
             np.save(save_path + f'eFCFTensorXValidated_dim{dim_max}_delay{delay}.npy',efcf)
-            #np.save(path + f'eCCMTensorXValidated_dim{d_max}_delay{delay}.npy',eccm)
+            np.save(save_path + f'eCCMTensorXValidated_dim{dim_max}_delay{delay}.npy',eccm)
             np.save(save_path + f'lags.npy',lags)
 
         # Average over folds and determine the limiting statistics
@@ -595,7 +635,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 already_made = False
                 for k in range(kfolds):
                     print(f'Surrogates for fold {k}')
-                    surrogates[k] = parallel_twin_surrogates(surr_data[k],N=n_surrogates,Tshift = tShift,seed=np.random.randint(0,2**32-1,1)[0])
+                    surrogates[k] = parallel_twin_surrogates(surr_data[k],n_surrogates=n_surrogates,Tshift = tShift,seed=np.random.randint(0,2**32-1,1)[0])
 
             if save and not already_made:
                 if not os.path.isdir(save_path+'/surrogates'):
@@ -605,6 +645,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                         np.save(save_path+'/surrogates/'+f'surrogate{n},{k}.npy',surrogates[k][n]) 
 
             surrogate_fcfs = np.zeros((n_surrogates,kfolds,N,N,1))
+            surrogate_corrs = np.zeros((n_surrogates,kfolds,N,N,1))
+
             print(f'Finished Surrogate Generation in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             
             eccm_full_process_start_time = time.time_ns()
@@ -646,6 +688,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                     for proc in processes:
                         item = proc.get()
                         surrogate_fcfs[item[0][2],item[0][0],item[0][1],:,:] = item[1]
+                        surrogate_corrs[item[0][2],item[0][0],item[0][1],:,:] = item[2]
                 else:
                     #TODO
                     process_outputs = tqdm.tqdm([ p.apply_async(remote_build_nn_single, 
@@ -669,6 +712,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                         item = proc.get()
                         for k in kfolds:
                             surrogate_fcfs[item[0][2],k,item[0][1],:,0] = item[1]
+                            surrogate_corrs[item[0][2],k,item[0][1],:,0] = item[2]
 
                 completed_surrs[sn] = True
                 
@@ -685,7 +729,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 np.save(save_path+'surrogate_fcf.npy',surrogate_fcfs)
 
         pvals = np.zeros((N,N,lags.shape[0]))*np.nan
-        avgd_surrogate_fcfs = np.nanmean(surrogate_fcfs,axis=0)
+        flat_surr_fcf = surrogate_fcfs.reshape(-1,*surrogate_fcfs.shape[2:])
 
         if os.path.isfile(save_path+'maxdim_pvalues.npy'):
             pvals = np.load(save_path+'maxdim_pvalues.npy')
@@ -695,15 +739,15 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
             if normal_pval:
                 # TODO: I think it might be better to use a skewed-normal but I am going with this right now
-                surrogate_means = np.nanmean(avgd_surrogate_fcfs,axis=0)
-                surrogate_stds = np.nanstd(avgd_surrogate_fcfs,axis=0)
+                surrogate_means = np.nanmean(flat_surr_fcf,axis=0)
+                surrogate_stds = np.nanstd(flat_surr_fcf,axis=0)
                 for l in range(lags.shape[0]):
                     for i in range(hub_nodes.shape[0]):
                         for j in range(N):
                             pvals[hub_nodes[i],j,l] = 1-2*np.abs(stats.norm.cdf(averaged_accuracy[hub_nodes[i],j,l],loc=surrogate_means[i,j],scale=surrogate_stds[i,j])-0.5)
             else:
                 #TODO
-                pvals = 1-2*np.abs(np.array([[[stats.percentileofscore(avgd_surrogate_fcfs[:,i,j],averaged_accuracy[hub_nodes[i],j,k],kind='strict') for k in range(lags.shape[0])] for j in range(N)] for i in range(N)])/100 - .5)
+                pvals = 1-2*np.abs(np.array([[[stats.percentileofscore(flat_surr_fcf[:,i,j],averaged_accuracy[hub_nodes[i],j,k],kind='strict') for k in range(lags.shape[0])] for j in range(N)] for i in range(N)])/100 - .5)
 
             significant_pair_lags = np.argwhere(pvals <= pval_threshold)
             corrected_pval = pval_threshold
@@ -738,9 +782,12 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
 
         reconstruction_accuracies = np.zeros((kfolds,num_dims,N,N,lags.shape[0]))*np.nan
+        reconstruction_corrs = np.zeros((kfolds,num_dims,N,N,lags.shape[0]))*np.nan
+
         #corr_accuracies = np.zeros((num_dims,N,N,lags.shape[0]))*np.nan
         #corr_accuracies[:,-1,:,:,:] = corr_accuracy
         reconstruction_accuracies[:,-1,:,:,:] = efcf
+        reconstruction_corrs[:,-1,:,:,:] = eccm
         
         if os.path.isfile(save_path+'almost_all_computed_fcfs.npy'):
             reconstruction_accuracies = np.load(save_path+'almost_all_computed_fcfs.npy')
@@ -788,9 +835,14 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                     item = proc.get()
                     aff,kfold,d_curr = item[0]
                     curr_fcfs = item[1]
+                    corr_fcfs = item[2]
                     if transform == 'fisher':
                         curr_fcfs = np.arctanh(curr_fcfs)
-                    reconstruction_accuracies[kfold,d_curr-1,aff,:,:] = curr_fcfs 
+                        corr_fcfs = np.arctanh(corr_fcfs)
+
+                    reconstruction_accuracies[kfold,d_curr-d_min,aff,:,:] = curr_fcfs 
+                    reconstruction_corrs[kfold,d_curr-d_min,aff,:,:] = corr_fcfs 
+
 
             y = np.array([np.nanmean(reconstruction_accuracies[:,searched_dims,i,j,maxed_fcf_lags[i,j]],axis=0) for i,j in np.argwhere(incomplete_pairs)])[:,0,:]
             #y = np.array([np.nanmax(np.nanmean(reconstruction_accuracies,axis=0)[searched_dims,i,j,:],axis=1) for i,j in np.argwhere(incomplete_pairs)])
@@ -819,6 +871,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
         if save:
             np.save(save_path+'almost_all_computed_fcfs.npy',reconstruction_accuracies)
+            np.save(save_path+'almost_all_computed_eccms.npy',reconstruction_corrs)
             np.save(save_path+'final_optimum_dimensions.npy',actual_optimum_dims)
 
         stopped_too_early = np.logical_and(~np.isnan(actual_optimum_dims),np.isnan(actual_optimum_vals))
@@ -844,6 +897,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 vals = out.get()
                 k,i,j = vals[0]
                 curr_fcf = vals[1]
+                curr_corr = vals[2]
                 d_opt = int(actual_optimum_dims[i,j])
                 if transform == 'fisher':
                     curr_fcf = np.arctanh(curr_fcf)
@@ -854,6 +908,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
     
     if save:
         np.save(save_path+'all_computed_fcfs.npy',reconstruction_accuracies)
+        np.save(save_path+'all_computed_eccms.npy',reconstruction_corrs)
+
 
     total_time = time.time_ns()-time_start
 
