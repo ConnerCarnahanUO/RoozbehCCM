@@ -1,12 +1,12 @@
 data_type: Numpy
-path: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Logistic3-5/TS.npy
+path: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Logistic3-7/TS.npy
 config_path: ./DataSets/configs/example_configs/N20191207.yaml
-out_path: ./outputs/Logistic3-5/
+out_path: ./outputs/Logistic3-7/
 save: True
 
 d_min: 1
 d_max: 10
-delay: 0
+delay: 1
 low_lag: -10
 high_lag: 10
 lag_step: 1

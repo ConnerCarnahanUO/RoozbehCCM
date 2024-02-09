@@ -472,18 +472,15 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         os.mkdir(save_path)
 
     hub_nodes_needed = int(np.ceil(node_ratio*N))
-    """def X_ref():
-        global X
-        return X"""
     
     if seed == 0:
         np.random.seed(time.time_ns()%(2**32-1))
     
     time_start = time.time_ns()
 
-    print('Finding Optimum Delay')
     with Pool(processes=max_processes) as p:
         if delay == 0:
+            print('Finding Optimum Delay')
             process_outputs = [[]]*N
             MIDelays = np.zeros(N)
             process_outputs = tqdm.tqdm([p.apply_async(remote_ApproximatebestTau, args = (i,X[:,i],0,10,50,False,0.1)) for i in range(N)],desc='Mutual Information')
@@ -492,6 +489,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             delay = int(np.max([1,np.min(MIDelays)]))
             print(MIDelays)
 
+        print(f'Using Delay: {delay}')
         #TODO: Determine the highest dim based on the Takens' Dimension (Considering Nearest Neighbors method)
         test_dims = np.arange(d_min,dim_max+1)
         num_dims = test_dims.shape[0]
