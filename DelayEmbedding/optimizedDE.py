@@ -141,7 +141,7 @@ def CCMReconstruction(Predicted,Predictor,nns,test_indices):
     return reconstruction.T, reconstruction_error#, np.corrcoef(reconstruction[:,0],Predicted[:,0])
 
 def SequentialLaggedReconstruction(Predicted,Predictor,nns,test_indices,lags=np.array([0])):
-    reconstructions = [[]]*lags.shape[0]
+    reconstructions = [[] for l in range(lags.shape[0])]
     reconstruction_error = np.zeros(lags.shape[0])
     reconstruction_corr = np.zeros(lags.shape[0])
     for l in range(lags.shape[0]):
@@ -251,7 +251,7 @@ def indexed_SurrogateMap(passthrough,X,channel):
 
 def Curr_channel_Gen(channel,X_channel,ind,eln,T,n_surrogates):
     np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
-    curr_surrs = [[]]*n_surrogates
+    curr_surrs = [[] for sn in range(n_surrogates)]
     for sn in range(n_surrogates):
         kn = np.random.randint(0,T,1)[0]-1
         curr_surrs[sn] = np.zeros(T)
@@ -276,11 +276,11 @@ def parallel_twin_surrogates(X,n_surrogates,Tshift=0,max_processes=64,seed=0):
     np.random.seed(seed)
     T,D,C = X.shape
 
-    elns = [[]]*C
-    inds = [[]]*C
+    elns = [[] for c in range(C)]
+    inds = [[] for c in range(C)]
 
     surrogate_time = time.time_ns()
-    surrs = [[]]*n_surrogates
+    surrs = [[] for sn in range(n_surrogates)]
 
     #Generate the surrogate swapping indices for each channel in parallel
     with Pool(processes=max_processes) as p:
@@ -360,8 +360,8 @@ def parallel_twin_surrogates(X,n_surrogates,Tshift=0,max_processes=64,seed=0):
     return surrs
 
 def AddNextOptimum(pair_mask, dims, maxFCFs, smoothing=0.5,fullrange = False):
-    ys = [[]]*pair_mask[pair_mask].shape[0]
-    yinds = [[]]*pair_mask[pair_mask].shape[0]
+    ys = [[] for p in range(pair_mask[pair_mask].shape[0])]
+    yinds = [[] for p in range(pair_mask[pair_mask].shape[0])]
     ind = 0
     for n,m in zip(*pair_mask):
         yinds[ind] = (n,m)
@@ -481,7 +481,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
     with Pool(processes=max_processes) as p:
         if delay == 0:
             print('Finding Optimum Delay')
-            process_outputs = [[]]*N
+            process_outputs = [[] for n in range(N)]
             MIDelays = np.zeros(N)
             process_outputs = tqdm.tqdm([p.apply_async(remote_ApproximatebestTau, args = (i,X[:,i],0,10,50,False,0.1)) for i in range(N)],desc='Mutual Information')
             for out in process_outputs:
@@ -525,7 +525,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         else:
             eccm_full_process_start_time = time.time_ns()
             # build the weight matrices for all the variables and folds
-            all_nns = [[[]]*N]*kfolds
+            all_nns = [[[] for n in range(N)] for k in range(kfolds)]
             #print('Building CCM Mappings')
             process_outputs =tqdm.tqdm([p.apply_async(remote_build_nn_single,
                                                     args = ((k,j),rolled_delay_vectors[k][:,:,j],
@@ -609,7 +609,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         surrogates = None
 
         if os.path.isdir(save_path+'/surrogates'):
-            surrogates = [[[]]*kfolds]*n_surrogates
+            surrogates = [[[] for k in range(kfolds)] for sn in range(n_surrogates)]
             for f in os.listdir(save_path+'/surrogates'):
                 sn = int(f[-7])
                 k = int(f[-5])
@@ -629,7 +629,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             if retain_test_set:
                 surr_data = lib_targets
             if surrogates is None:
-                surrogates = [[]]*kfolds
+                surrogates = [[] for k in range(kfolds)]
                 already_made = False
                 for k in range(kfolds):
                     print(f'Surrogates for fold {k}')
@@ -659,7 +659,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 if completed_surrs[sn]:
                     continue
 
-                surrogate_nns = [[[]]*N]*kfolds
+                surrogate_nns = [[[] for i in range(N)] for j in range(kfolds)]
 
                 surrogate_delays = [np.concatenate(list(map(lambda x: create_delay_vector(x,delay,dim_max)[:,:,np.newaxis], surrogates[k][sn].T)),2) for k in range(kfolds)]
                 if retain_test_set:
@@ -677,6 +677,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 
                     for proc in process_outputs:
                         item = proc.get()
+                        #surrogate_nns += [item[1]]
+                        #nns_indices += [[item[0][0],item[0][1]]]
                         surrogate_nns[item[0][0]][item[0][1]] = item[1]
                 
                     processes = tqdm.tqdm([p.apply_async(reconstruction_column,
@@ -819,7 +821,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             print(f'Computing CCM for dims: {dims} and {np.argwhere(incomplete_pairs).shape[0]} pairs')
             
             job_num = 0
-            to_check = [[]]*N
+            to_check = [[] for n in range(N)]
             for i,j in np.argwhere(incomplete_pairs):
                 to_check[i] += [j]
                 job_num += 1
@@ -874,7 +876,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
         stopped_too_early = np.logical_and(~np.isnan(actual_optimum_dims),np.isnan(actual_optimum_vals))
 
-        last_nns = [[[[]]*N]*N]*kfolds
+        last_nns = [[[[] for n in range(N)] for m in range(N)] for k in range(kfolds)]
         
         if (np.argwhere(stopped_too_early).shape[0]) > 0:
             print(f'Still need to compute fcf for pairs: {np.argwhere(stopped_too_early)}')
