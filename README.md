@@ -24,7 +24,21 @@ This file is designed to determine the hub channels and significant connections 
 
 Step 1:
 
-The program takes an input file and converts it into a python array that extended Functional Causal Flow (eFCF)  will actually be calculated on. How this is done is defined in the "data_loader.py" file, and in the loading param file (RoozbehProject/dataparams.yaml) it is currently set to get a FIRA file as the input. (TODO: maybe add some more ways to do this).
+The program takes an input file and converts it into a numpy array that extended Functional Causal Flow (eFCF) will actually be calculated on. How this is done is defined in the "data_loader.py" file. If it is already a time series stored in a numpy array, the "data_type" parameter should be set to "Numpy". FIRA files are also supported, but require a little more:
+
+0. Open "dataparams.yaml" in with any text editor you want (nano, vs code, whatever is easiest)
+1. set data_type to FIRA.
+2. set path to the location of the FIRA file
+3. generate a config file for the FIRA file, this was implemented by Amin and for our purposes the only things that matter are the paths to the unstimulated data set and (rest file) and fs, which sets the binning time for spike counting. (There is a "Basic FIRA.yaml" file that you can use as a template)
+4. Set conig_path to the path of the config file you just made
+5. set out_path to the folder you want to use for the output data, make sure that if the directory is not created yet that you either do that or only have the path set to one level out from where you already have a folder (ie currentfolders/Newfolder is okay but currentfolders/Newfolder1/Newfolder2 will throw an error)
+6. (optional) Set any of the FCF computation parameters that you want, these are outlined in the following section, for now it is best to just have it set to not do pvalues and only compute hubs so that it won't take forever.
+7. in the terminal navigate to the RoozbehCCM folder use the following commands:
+
+conda activate fcf
+python RuneCCMSearch.py
+
+8. The outputs are in the folder you designated for the output. The rankings of hub channels is in the "hub_rankings.csv" file.
 
 Step 2a:
 
