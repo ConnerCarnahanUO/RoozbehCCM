@@ -441,7 +441,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                      lags=np.arange(-8,9), mask = None, transform='fisher',
                      node_ratio = 0.1, test_pval = True, compute_pvalue = False, n_surrogates = 10, normal_pval=False, pval_threshold=0.05, 
                      min_pairs = 1, dim_search_stopping_num = 3, save=True, save_path = './', retain_test_set = True, 
-                     max_processes = 64, early_stop = False, only_hubs = False, find_optimum_dims = False, seed = 0):
+                     max_processes = 64, early_stop = False, only_hubs = False, find_optimum_dims = False, seed = 0,pval_correction='Bonferroni'):
     """
     """
 
@@ -609,7 +609,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         surrogates = None
 
         if os.path.isdir(save_path+'/surrogates'):
-            surrogates = [[[] for k in range(kfolds)] for sn in range(n_surrogates)]
+            surrogates = [[[] for k in range(n_surrogates)] for sn in range(kfolds)]
             for f in os.listdir(save_path+'/surrogates'):
                 sn = int(f[-7])
                 k = int(f[-5])
@@ -736,7 +736,6 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             corrected_pval = np.load(save_path+'corrected_pvalue_threshold.npy') # Move this into the output yaml
             significant_pair_lags = np.load(save_path+'maxdim_SignificantPairs.npy')    
         else:
-
             if normal_pval:
                 # TODO: I think it might be better to use a skewed-normal but I am going with this right now
                 surrogate_means = np.nanmean(flat_surr_fcf,axis=0)
@@ -748,6 +747,9 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             else:
                 #TODO
                 pvals = 1-2*np.abs(np.array([[[stats.percentileofscore(flat_surr_fcf[:,i,j],averaged_accuracy[hub_nodes[i],j,k],kind='strict') for k in range(lags.shape[0])] for j in range(N)] for i in range(N)])/100 - .5)
+
+            if pval_correction == 'Bonferroni':
+                pvals *= kfolds
 
             significant_pair_lags = np.argwhere(pvals <= pval_threshold)
             corrected_pval = pval_threshold
@@ -867,7 +869,7 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
         if save:
             np.save(save_path+'last_computed_fcfs.npy',reconstruction_accuracies)
             np.save(save_path+'current_optimum_dimensions.npy',tested_optimium_dims)
-            np.save(save_path+'current_optimum_dimensions.npy',tested_optimium_vals)
+            np.save(save_path+'current_optimum_dimension_values.npy',tested_optimium_vals)
 
         if save:
             np.save(save_path+'almost_all_computed_fcfs.npy',reconstruction_accuracies)
@@ -899,10 +901,11 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 curr_fcf = vals[1]
                 curr_corr = vals[2]
                 d_opt = int(actual_optimum_dims[i,j])
+                d_index = d_opt-d_min
                 if transform == 'fisher':
                     curr_fcf = np.arctanh(curr_fcf)
-                reconstruction_accuracies[k,d_opt-1,i,j,:] = curr_fcf
-                actual_optimum_vals[i,j] = np.nanmean(reconstruction_accuracies[:,d_opt-1,i,j,maxed_fcf_lags[i,j]])
+                reconstruction_accuracies[k,d_index,i,j,:] = curr_fcf
+                actual_optimum_vals[i,j] = np.nanmean(reconstruction_accuracies[:,d_index,i,j,maxed_fcf_lags[i,j]])
             
     all_averaged_accuracies = np.nanmean(reconstruction_accuracies,axis=0)
     
