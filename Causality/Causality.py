@@ -10,6 +10,9 @@ from copy import deepcopy
 from scipy import stats
 import numpy as np
 import os
+import matplotlib.pyplot as plt
+import seaborn as sea
+import pickle
 
 # %%
 # -*- coding: utf-8 -*-
@@ -51,6 +54,91 @@ def mean_kolmogorov_smirnov(pre,pst):
             pvalue = np.nansum((pvalue,p))
     return cnn/len(pre),pvalue/len(pre)
 
+def DistTest(pre,post):
+    """KSTest(dist1,dist2,ttest0,ttest1)
+    Test whether two distributions of time series come from the same distribution (indicating perturbation effect)
+    """
+    pvalues={}
+    ttest = stats.ttest_ind(post,pre)
+    ranksum = stats.ranksums(post,pre)
+    kstest = stats.kstest(post,pre)
+    pvalues['ttest']= ttest.pvalue
+    pvalues['ranksum']=ranksum.pvalue
+    pvalues['kstest']=kstest.pvalue
+    test_stats={}
+    test_stats['ttest'] = ttest.statistic
+    test_stats['ranksum'] = ranksum.statistic
+    test_stats['kstest'] = kstest.statistic
+    return test_stats,pvalues
+
+
+def ExtendedInterventionalConnectivity(preactivity,postactivity,varnum=3,skip_stim_pre=10,skip_post_stim_values = np.arange(1,10),window=10,method='kstest',VarLabels=['X','Y','Z'],plot=False,figsize = (20,20),savepath=None):
+    '''
+    ExtendedInterventionalConnectivity:
+    
+    Args:
+    preactivity list[list[ndarray]]: a list organized first by the stimulated variable, then the stimulation number, amd then the activity prior to a stimulation
+    postactivity list[list[ndarray]]: a list organized first by the stimulated variable, then the stimulation number, amd then the activity after a stimulation
+    skip_stim_pre int: how many steps before a stimulation should be ignored in creating the prior distribution
+    skip_post_stim_values ndarray(int): how many steps after a stimulation should be tested for the optimum lag
+    window int: the window size for the moving average created to test the distributions
+    VarLabels list[str]: a list of strings that indicate the variable names, ordered by their order in the pre/postactivity lists
+    plot bool: whether plots should be generated
+    savepath bool: Where plots and values will be saved, if left None will not save
+    figsize tuple float: the size of the plots
+    method string: The test used to differentiate the pre and post distributions, currently must be kstest,ttest, or ranksum
+    varnum int: the number of variables that will be tested
+    '''
+    pre_dists = [np.transpose(np.dstack(preactivity[n]),(0,2,1)) for n in range(len(preactivity))]
+    post_dists = [np.transpose(np.dstack(postactivity[n]),(0,2,1)) for n in range(len(postactivity))]
+
+    all_stats = {}
+    fig = None
+    axs = None
+    save = savepath is not None
+
+    if plot:
+        fig,axs = plt.subplots(nrows=len(preactivity),ncols=varnum,figsize = figsize)
+    for n in range(len(preactivity)):
+        n_stats = {}
+        for m in range(varnum):
+            pre = pre_dists[n][-(skip_stim_pre+window):-skip_stim_pre,:,m]
+            pre = np.nanmean(pre,axis=0)
+            best_test_stats = {}
+            best_pvalues = {'kstest':1,'ttest':1,'ranksum':1}
+            best_lag = 0
+            if plot:
+                sea.ecdfplot(pre,ax=axs[n,m],label='Pre CDF')
+                axs[n,m].set_title(f'{VarLabels[m]} when {VarLabels[n]} Stimulated')
+            for l in skip_post_stim_values:
+                post = post_dists[n][l:l+window,:,m]
+                post = np.nanmean(post,axis=0)
+                test_stat, pvalue = DistTest(pre,post)
+                if best_pvalues[method] >= pvalue[method]:
+                    best_lag = l
+                    best_pvalues[method] = pvalue[method]
+                    best_test_stats[method] = test_stat[method]
+            
+            n_stats[f'{VarLabels[m]}'] = {'lag':best_lag,'method':method,'statistic':best_test_stats[method],'pvalue':best_pvalues[method]}
+            
+            if plot:
+                post = post_dists[n][best_lag:best_lag+window,:,m]
+                post = np.nanmean(post,axis=0)
+                sea.ecdfplot(post,ax=axs[n,m],label=f'Post CDF, lag = {best_lag}, {method}:{round(best_test_stats[method],3)}, pvalue:{round(best_pvalues[method],3)}')
+                axs[n,m].legend()
+        all_stats[f'Stim{VarLabels[n]}'] = n_stats
+    if plot:
+        if save:
+            plt.savefig(savepath+'ecdfs.svg')
+            plt.savefig(savepath+'ecdfs.png')
+        plt.show()
+    if save:
+        with open(savepath+'ExtendedICStatistics.pkl', 'wb') as f:
+            pickle.dump(all_stats, f)
+    return all_stats
+
+
+
 # %%
 def interventional_connectivity(
         activity,stim,mask=None,t=None,
@@ -77,6 +165,9 @@ def interventional_connectivity(
         pvalue: corresponding significance
     '''
     
+    N = len(activity)
+    T = activity[0].shape[0]
+
     if load and os.path.exists(file):
         result = np.load(file,allow_pickle=True).item()
         return result['cnn'],result['pvalue']
@@ -85,6 +176,12 @@ def interventional_connectivity(
     
     for i in range(len(stim)):
         if t is None:
+            """pre_time = np.zeros(T,dtype=bool)
+            pre_time[stim_[i][1]-bin_size-skip_pre:stim_[i][1]-skip_pre] = True
+            pst_time = np.zeros(T,dtype=bool)
+            pst_time[stim_[i][2]+skip_pst:stim[i][1]+skip_pst+bin_size] = True
+            pst_isi = [np.diff(activity[j][pst_time]) for j in range(N)]
+            pre_isi = [np.diff(activity[j][pre_time]) for j in range(N)]"""
             pst_isi = [np.diff(activity[j][(activity[j] <  stim_[i][2]+skip_pst+bin_size) & (activity[j] >= stim_[i][2]+skip_pst)]) for j in range(len(activity))]
             pre_isi = [np.diff(activity[j][(activity[j] >= stim_[i][1]-skip_pre-bin_size) & (activity[j] <  stim_[i][1]-skip_pre)]) for j in range(len(activity))]
         else:
@@ -162,6 +259,7 @@ def interventional_connectivity_arb_func(
         if t is None:
             pst_isi = [np.diff(activity[j][(activity[j] <  stim_[i][2]+skip_pst+bin_size) & (activity[j] >= stim_[i][2]+skip_pst)]) for j in range(len(activity))]
             pre_isi = [np.diff(activity[j][(activity[j] >= stim_[i][1]-skip_pre-bin_size) & (activity[j] <  stim_[i][1]-skip_pre)]) for j in range(len(activity))]
+
         else:
             pst_isi = [activity[j][(t <  stim_[i][2]+skip_pst+bin_size) & (t >= stim_[i][2]+skip_pst)] for j in range(len(activity))]
             pre_isi = [activity[j][(t >= stim_[i][1]-skip_pre-bin_size) & (t <  stim_[i][1]-skip_pre)] for j in range(len(activity))]
@@ -317,3 +415,4 @@ def IC2(
     if save: np.save(file,{'cnn':cnn,'pvalue':pvalue})
     
     return cnn,pvalue
+# %%
