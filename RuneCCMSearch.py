@@ -15,6 +15,9 @@ eccm = optDE.ParallelFullECCM(datapars['TS'],delay = datapars['delay'],dim_max=d
                               only_hubs=datapars['only_hubs'], find_optimum_dims=datapars['find_optimum_dims'],max_processes=initpars['num_cpus'])
 
 
+with open(datapars['out_path']+'data_pars.yaml','w') as outfile:
+    savepars = yaml.safe_load(Path('./RoozbehProject/dataparams.yaml').read_text())
+    yaml.dump(savepars,outfile,default_flow_style=False)
 
 """# For testing
 import scipy.io as scio

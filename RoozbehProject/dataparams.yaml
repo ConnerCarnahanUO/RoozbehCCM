@@ -1,11 +1,11 @@
-data_type: Numpy
-path: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Logistic3-6-2/TS.npy
+data_type: FIRA
+path: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Niels/N20191207a.FIRA.resting.PAG.mat
 config_path: ./RoozbehProject/Basic_FIRA.yaml
-out_path: ./outputs/Logistic3-6-2/
+out_path: ./outputs/Niels20191207a/
 save: True
 
-d_min: 1
-d_max: 5
+d_min: 4
+d_max: 30
 delay: 1
 low_lag: -10
 high_lag: 10
@@ -16,9 +16,9 @@ retain_test_set: True
 node_ratio: 0.99
 normal_pval: True
 pval_threshold: 1
-compute_pvalue: False
+compute_pvalue: True
 min_pairs: 3
 dim_search_stopping_num: 3
 early_stop: False
-only_hubs: True
+only_hubs: False
 find_optimum_dims: True

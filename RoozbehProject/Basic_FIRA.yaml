@@ -6,9 +6,8 @@ load: 0 # If one, load from saved npy files
 
 # Dataset Parameters
 # ==================
-rest_file: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Round1/round1/unsorted/Niels/N20191108a.FIRA.resting.PAG.mat
-stim_file: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Round1/round1/unsorted/Niels/N20191108b.FIRA.resting.ustim.PAG.mat
-
+rest_file: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Niels/N20191207a.FIRA.resting.PAG.mat
+stim_file: /home/ccarnahan/GitHubs/RoozbehCCM/RoozbehCCM/DataSets/Niels/N20191207b.FIRA.resting.ustim.PAG.mat
 fs: 60
 
 # Analysis Parameters
