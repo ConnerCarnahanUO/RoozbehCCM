@@ -3,7 +3,7 @@ Methods for simulating neural data and computing causality and prediction of tim
 
 # Installation
 ```
-git clone https://github.com/amin-nejat/CCM.git
+gh repo clone ConnerCarnahanUO/RoozbehCCM
 
 conda create --name fcf python=3.11
 conda activate fcf
