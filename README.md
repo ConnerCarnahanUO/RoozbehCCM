@@ -3,17 +3,29 @@ Methods for simulating neural data and computing causality and prediction of tim
 
 # Installation
 ```
-gh repo clone ConnerCarnahanUO/RoozbehCCM
+git clone https://github.com/ConnerCarnahanUO/RoozbehCCM.git
 
 conda create --name fcf python=3.11
 conda activate fcf
 pip install -r ./requirements.txt
 
-
 ```
-This will install "from source".
+If you want your environment to have a different name just replace "fcf" with whatever you want in the above code.
 
-# ModernCCM
+## Barebones lab usage guide
+
+1. Generate the FIRA file from the recorded neural data and copy the file path to the FIRA file
+2. Change the following 2 strings to the file path of the new data
+   a. In RoozbehProject/Basic_FIRA.yaml "rest_path"
+   b. In RoozbehProject/dataparams.yaml "path"
+3. In RoozbehProject/dataparams.yaml change the value of "out_path" to the location you want to save the output in. WARNING: DO NOT MAKE THIS NESTEST (like output/folder1/folder2/) IT WILL BE UNABLE TO SAVE.
+4. Open the anaconda prompt and navigate to the directory of this folder.
+5. Run the following commands:
+```
+conda activate fcf
+python RuneCCMSearch.py
+```
+6. After completion there will be files generated in your output folder. The one with the Node Hub rankings is "hub_rankings.csv" which has the channels listed in descending order of hubness with their hubness values
 
 ## RuneCCMSearch.py
 
