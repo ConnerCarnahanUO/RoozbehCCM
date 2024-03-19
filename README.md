@@ -4,13 +4,12 @@ Methods for simulating neural data and computing causality and prediction of tim
 # Installation
 ```
 git clone https://github.com/amin-nejat/CCM.git
-cd CCM
 
-conda install --file requirements.txt 
-OR 
-pip install -r requirements.txt
+conda create --name fcf python=3.11
+conda activate fcf
+pip install scipy pyyaml tqdm matplotlib ipywidgets scikit-learn networkx pandas
 
-pip install -e .
+
 ```
 This will install "from source".
 
