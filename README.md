@@ -7,7 +7,7 @@ git clone https://github.com/amin-nejat/CCM.git
 
 conda create --name fcf python=3.11
 conda activate fcf
-pip install scipy pyyaml tqdm matplotlib ipywidgets scikit-learn networkx pandas
+pip install scipy pyyaml tqdm matplotlib ipywidgets scikit-learn networkx pandas seaborn ray
 
 
 ```
