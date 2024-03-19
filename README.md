@@ -18,14 +18,26 @@ If you want your environment to have a different name just replace "fcf" with wh
 2. Change the following 2 strings to the file path of the new data
    a. In RoozbehProject/Basic_FIRA.yaml "rest_path"
    b. In RoozbehProject/dataparams.yaml "path"
-3. In RoozbehProject/dataparams.yaml change the value of "out_path" to the location you want to save the output in. WARNING: DO NOT MAKE THIS NESTEST (like output/folder1/folder2/) IT WILL BE UNABLE TO SAVE.
+3. In RoozbehProject/dataparams.yaml change the value of "out_path" to the location you want to save the output in. WARNING: DO NOT MAKE THIS NESTED (like output/folder1/folder2/) IT WILL BE UNABLE TO SAVE UNLESS YOU HAVE ALREADY CREATED THE EMPTY FILEPATH ON YOUR OWN.
 4. Open the anaconda prompt and navigate to the directory of this folder.
-5. Run the following commands:
+5. Run the following commands on linux:
 ```
 conda activate fcf
 python RuneCCMSearch.py
 ```
+
+or if on windows:
+
+```
+conda activate fcf
+python RuneCCMSearch_Windows.py
+```
+
 6. After completion there will be files generated in your output folder. The one with the Node Hub rankings is "hub_rankings.csv" which has the channels listed in descending order of hubness with their hubness values
+
+Things to consider: 
+This code is explicityly designed to skip things already computed in the output folder. So if you want to recompute anything with different parameters you should give a different output folder in the 3rd step.
+
 
 ## RuneCCMSearch.py
 
