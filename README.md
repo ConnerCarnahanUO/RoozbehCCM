@@ -7,7 +7,7 @@ gh repo clone ConnerCarnahanUO/RoozbehCCM
 
 conda create --name fcf python=3.11
 conda activate fcf
-pip install scipy pyyaml tqdm matplotlib ipywidgets scikit-learn networkx pandas seaborn ray
+pip install -r ./requirements.txt
 
 
 ```
