@@ -1,6 +1,8 @@
 # CCM
 Methods for simulating neural data and computing causality and prediction of time series data based on convergent cross mapping.
 
+This is a derivative version of Amin Nejat's code found here: https://github.com/amin-nejat/FCF/tree/object_oriented
+
 # Installation
 ```
 git clone https://github.com/ConnerCarnahanUO/RoozbehCCM.git
@@ -36,8 +38,10 @@ python RuneCCMSearch_Windows.py
 6. After completion there will be files generated in your output folder. The one with the Node Hub rankings is "hub_rankings.csv" which has the channels listed in descending order of hubness with their hubness values
 
 Things to consider: 
+
 This code is explicityly designed to skip things already computed in the output folder. So if you want to recompute anything with different parameters you should give a different output folder in the 3rd step.
 
+The time this will take is highly dependent on a bunch of different 
 
 ## RuneCCMSearch.py
 
