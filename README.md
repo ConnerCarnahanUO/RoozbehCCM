@@ -13,7 +13,7 @@ conda activate fcf
 pip install -r ./requirements.txt
 
 ```
-If you want your environment to have a different name just replace "fcf" with whatever you want in the above code.
+If you want your environment to have a different name just replace "fcf" with whatever you want in the above code. Additionally, if your workstation is really old you might need to choose to have an older version with python, this does still run for anything newer than 3.8.
 
 ## Barebones lab usage guide
 
