@@ -8,7 +8,7 @@ This is a derivative version of Amin Nejat's code found here: https://github.com
 git clone https://github.com/ConnerCarnahanUO/RoozbehCCM.git
 
 cd RoozbehCCM
-conda create --name fcf python=3.11
+conda create --name fcf python=3.9
 conda activate fcf
 pip install -r ./requirements.txt
 
