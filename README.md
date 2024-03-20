@@ -42,7 +42,7 @@ Things to consider:
 
 This code is explicityly designed to skip things already computed in the output folder. So if you want to recompute anything with different parameters you should give a different output folder in the 3rd step.
 
-The time this will take is highly dependent on a bunch of different 
+The time this will take is highly dependent on a bunch of different aspects of both the data and your system architecture, in general it will run fastest with as many threads as possible and with low embedding dimension.
 
 ## RuneCCMSearch.py
 
