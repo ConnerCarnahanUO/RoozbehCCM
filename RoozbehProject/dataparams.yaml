@@ -1,7 +1,7 @@
 data_type: FIRA
-path: ./DataSets/Niels/N20191109a.FIRA.resting.PAG.mat
+path: ./DataSets/Niels/N20191207a.FIRA.resting.PAG.mat
 config_path: ./RoozbehProject/Basic_FIRA.yaml
-out_path: ./outputs/Niels20191109/
+out_path: ./outputs/Niels20191207/
 save: True
 
 d_min: 4
