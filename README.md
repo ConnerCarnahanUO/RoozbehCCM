@@ -7,12 +7,13 @@ This is a derivative version of Amin Nejat's code found here: https://github.com
 ```
 git clone https://github.com/ConnerCarnahanUO/RoozbehCCM.git
 
-conda create --name fcf python=3.11
+cd RoozbehCCM
+conda create --name fcf python=3.9
 conda activate fcf
 pip install -r ./requirements.txt
 
 ```
-If you want your environment to have a different name just replace "fcf" with whatever you want in the above code.
+If you want your environment to have a different name just replace "fcf" with whatever you want in the above code. Additionally, if your workstation is really old you might need to choose to have an older version with python, this does still run for anything newer than 3.8.
 
 ## Barebones lab usage guide
 
@@ -41,7 +42,7 @@ Things to consider:
 
 This code is explicityly designed to skip things already computed in the output folder. So if you want to recompute anything with different parameters you should give a different output folder in the 3rd step.
 
-The time this will take is highly dependent on a bunch of different 
+The time this will take is highly dependent on a bunch of different aspects of both the data and your system architecture, in general it will run fastest with as many threads as possible and with low embedding dimension.
 
 ## RuneCCMSearch.py
 
