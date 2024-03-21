@@ -31,7 +31,6 @@ import os
 
 import time
 
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 # %%
 @ray.remote
 def remote_connectivity(X,**args):
