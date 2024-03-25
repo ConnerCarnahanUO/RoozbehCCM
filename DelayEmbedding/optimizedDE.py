@@ -18,6 +18,8 @@ from tqdm.contrib.concurrent import process_map
 import os
 import sys
 import pandas as pd
+from datetime import datetime
+import yaml
 
 #%%
 # Main computation helper functions
@@ -238,10 +240,10 @@ def SurrogateMap(X,channel):
     
     nbrs = NearestNeighbors(radius=threshold, algorithm='ball_tree').fit(X)
     d, indices = nbrs.radius_neighbors(X)
-    indices = [list(i) for i in indices]
+    #indices = [list(i) for i in indices]
     #print(indices)
-    u,a = np.unique(indices,return_inverse=True)
-    ind = [u[a[i]] for i in range(len(a))]
+    #u,a = np.unique(indices,return_inverse=True)
+    ind = indices # [u[a[i]] for i in range(len(a))]
     eln = [len(i) for i in ind]
     return channel, ind, eln
 
@@ -475,7 +477,14 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
     
     if seed == 0:
         np.random.seed(time.time_ns()%(2**32-1))
-    
+
+
+
+    important_times = {'Date': datetime.today().strftime('%Y-%m-%d') }
+
+    with open(save_path+'benchmarkings.yaml','w') as outfile:
+        yaml.dump(important_times,outfile,default_flow_style=False)
+
     time_start = time.time_ns()
 
     with Pool(processes=max_processes) as p:
@@ -539,10 +548,15 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             reconstruction_accuracy = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
             eccm = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
 
+            curr_time_taken = time.time_ns()-eccm_full_process_start_time
+            
+            important_times[f'Dim{dim_max}NNSTotal'] = curr_time_taken*(10**-9)
+            important_times[f'Dim{dim_max}NNSPerProcess'] = (curr_time_taken/(N*kfolds))*(10**-9)
             #corr_accuracy = np.zeros((kfolds,N,N,lags.shape[0]))*np.nan
 
             #print(f'First round NNS computed in {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             eccm_full_process_start_time = time.time_ns()
+
 
             process_outputs = tqdm.tqdm([p.apply_async(reconstruction_column,args=((k,n),all_nns[k][n],targets[k],lib_targets[k],test_indices,lags))
                                         for n in range(N) for k in range(kfolds)],desc='Reconstructing')
@@ -553,8 +567,14 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 eccm[item[0][0],item[0][1],:,:] = item[2]
             
             #print(f'Processed reconstructions in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+
+            curr_time_taken = time.time_ns()-eccm_full_process_start_time
+            
+            important_times[f'Dim{dim_max}ReconstructionTotal'] = curr_time_taken*(10**-9)
+            important_times[f'Dim{dim_max}ReconstructionPerProcess'] = (curr_time_taken/(N*kfolds))*(10**-9)
             
             efcf = reconstruction_accuracy
+
 
             #eccm = corr_accuracy
             if transform == 'fisher':
@@ -564,6 +584,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             np.save(save_path + f'eFCFTensorXValidated_dim{dim_max}_delay{delay}.npy',efcf)
             np.save(save_path + f'eCCMTensorXValidated_dim{dim_max}_delay{delay}.npy',eccm)
             np.save(save_path + f'lags.npy',lags)
+            with open(save_path+'benchmarkings.yaml','w') as outfile:
+                yaml.dump(important_times,outfile,default_flow_style=False)
 
         # Average over folds and determine the limiting statistics
         averaged_accuracy = np.nanmean(efcf,axis=0)
@@ -647,6 +669,15 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
             print(f'Finished Surrogate Generation in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
             
+            curr_time_taken = time.time_ns()-eccm_full_process_start_time
+            
+            important_times[f'Dim{dim_max}SurrogateConstructionTotal'] = curr_time_taken*(10**-9)
+            important_times[f'Dim{dim_max}SurrogateConstructionPerProcess'] = (curr_time_taken/(N*kfolds*n_surrogates))*(10**-9)
+
+
+            with open(save_path+'benchmarkings.yaml','w') as outfile:
+                yaml.dump(important_times,outfile,default_flow_style=False)
+
             eccm_full_process_start_time = time.time_ns()
 
             # Generate nearest maps for all surrogates
@@ -656,6 +687,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                 completed_surrs = np.load(save_path+'completed_surrs.npy')
 
             for sn in range(n_surrogates):
+                sn_start_time = time.time_ns()
+
                 if completed_surrs[sn]:
                     continue
 
@@ -716,11 +749,22 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
                 completed_surrs[sn] = True
                 
+                curr_time_taken = time.time_ns()-sn_start_time
+            
+                important_times[f'Dim{dim_max}Surrogate{sn}CCMTotal'] = curr_time_taken*(10**-9)
+                important_times[f'Dim{dim_max}Surrogate{sn}CCMPerProcess'] = (curr_time_taken/(N*kfolds))*(10**-9)
+                
+                
                 if save:
                     np.save(save_path+'intermediate_surrogate_fcf.npy',surrogate_fcfs)
                     np.save(save_path+'completed_surrs.npy',completed_surrs)
+                    with open(save_path+'benchmarkings.yaml','w') as outfile:
+                        yaml.dump(important_times,outfile,default_flow_style=False)
+
 
             print(f'Finished Surrogate evaluation in: {(time.time_ns()-eccm_full_process_start_time)*10**-9} s')
+            curr_time_taken = time.time_ns()-eccm_full_process_start_time
+            important_times[f'Dim{dim_max}AllSurrogatesCCMTotal'] = curr_time_taken*(10**-9)                
 
             if transform == 'fisher':
                 surrogate_fcfs = np.arctanh(surrogate_fcfs)
@@ -831,6 +875,8 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
             afferents = np.argwhere(incomplete_pairs.any(axis=1))[:,0]
 
             for d in range(dims.shape[0]):
+                d_start_time = time.time_ns()
+
                 process_outputs = tqdm.tqdm([p.apply_async(FullCCMColumn,args=((afferents[i],k,dims[d]),rolled_delay_vectors[k][:,:dims[d],:],afferents[i],train_indices,test_indices,lags)) 
                                              for k in range(kfolds) for i in range(len(afferents))],desc=f'FCF for {dims[d]}')
                 for iK,proc in enumerate(process_outputs):
@@ -845,6 +891,13 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
                     reconstruction_accuracies[kfold,d_curr-d_min,aff,:,:] = curr_fcfs 
                     reconstruction_corrs[kfold,d_curr-d_min,aff,:,:] = corr_fcfs 
 
+                curr_time_taken = time.time_ns()-d_start_time
+            
+                important_times[f'Dim{dims[d]}CCMTotal'] = curr_time_taken*(10**-9)
+                important_times[f'Dim{dims[d]}CCMPerProcess'] = (curr_time_taken/(N*kfolds))*(10**-9)
+                
+                with open(save_path+'benchmarkings.yaml','w') as outfile:
+                    yaml.dump(important_times,outfile,default_flow_style=False)
 
             y = np.array([np.nanmean(reconstruction_accuracies[:,searched_dims,i,j,maxed_fcf_lags[i,j]],axis=0) for i,j in np.argwhere(incomplete_pairs)])[:,0,:]
             #y = np.array([np.nanmax(np.nanmean(reconstruction_accuracies,axis=0)[searched_dims,i,j,:],axis=1) for i,j in np.argwhere(incomplete_pairs)])
@@ -915,6 +968,11 @@ def ParallelFullECCM(X,d_min=1, dim_max=30, kfolds=5, delay=0,
 
 
     total_time = time.time_ns()-time_start
+
+    important_times['TotalTime'] = total_time*(10**-9)
+
+    with open(save_path+'benchmarkings.yaml','w') as outfile:
+        yaml.dump(important_times,outfile,default_flow_style=False)
 
     print(f'Total Time taken: {total_time*(10**-9)} s')
     np.save(save_path+'time_elapsed.npy', np.array([total_time]))
