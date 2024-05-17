@@ -199,6 +199,24 @@ def DelayPlot3D(y,tau):
     a.plot3D(vecs[:,0],vecs[:,1],vecs[:,2],linewidth =.5)
     plt.show()
 
+def MultiDelayPlot3D(Y,tau,cmap='plasma',figsize=(14,12)):
+    """
+    plots multiple 3d delay embeddings
+    args:
+        Y: TxN set of N time series of time length T > 3*tau
+        tau: int representing delay length
+        cmap: str for the color map for ploting the different curves
+    """
+    color_map = cm.get_cmap(cmap)
+    colors = color_map(np.linspace(0,1,Y.shape[1]))
+    vecs = [DE.create_delay_vector(Y[:,i],tau,3) for i in range(Y.shape[1])]
+    fig = plt.figure(figsize = figsize)
+    a = plt.axes(projection ='3d')
+    for i in range(Y.shape[1]):
+        a.plot3D(vecs[i][:,0],vecs[i][:,1],vecs[i][:,2],linewidth =.5,label=f'Variable {i}',color=colors[i])
+    plt.legend()
+    plt.show()
+
 def ScatterRegress(x,y,order=1,fn = None,average_equals=True):
     xsortargs = np.argsort(x)
     x1 = x[xsortargs]

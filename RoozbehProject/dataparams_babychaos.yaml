@@ -1,0 +1,24 @@
+data_type: FIRA
+path: ./DataSets/Niels/N20191207a.FIRA.resting.PAG.mat
+config_path: ./RoozbehProject/Basic_FIRA.yaml
+out_path: ./outputs/Niels20191207/
+save: True
+
+d_min: 4
+d_max: 30
+delay: 1
+low_lag: -10
+high_lag: 10
+lag_step: 1
+kfolds: 5
+n_surrogates: 20
+retain_test_set: True
+node_ratio: 0.99
+normal_pval: True
+pval_threshold: 1
+compute_pvalue: False
+min_pairs: 3
+dim_search_stopping_num: 3
+early_stop: True
+only_hubs: True
+find_optimum_dims: False
