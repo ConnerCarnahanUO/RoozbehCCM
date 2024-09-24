@@ -1,0 +1,28 @@
+# Dataset Parameters
+# ==================
+fs: 60
+remove_bad_spikes: 1
+bad_spike_time_interval: 2
+bad_spike_ratio: 0.33
+default_outpath: ./outputs/
+
+# CCM Parameters
+# ==================
+d_min: 1
+d_max: 20
+delay: 1
+lags: [-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10]
+lag_step: 1
+kfolds: 5
+n_surrogates: 20
+retain_test_set: True
+node_ratio: 1.0
+normal_pval: True
+pval_threshold: 1.0
+min_pairs: 1
+dim_search_stopping_num: 3
+early_stop: False
+only_hubs: True
+compute_pvalue: True
+max_processes: 64
+random_projection: True

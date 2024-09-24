@@ -25,7 +25,7 @@ def average_treatment_effect(pre,pst):
 def aggregated_kolmogorov_smirnov(pre,pst):
     '''ks distribution distance between pre and post stimulation activity
     '''
-    if np.array(pre).size > 0 and np.array(pst).size > 0:
+    if np.hstack(pre).size > 0 and np.hstack(pst).size > 0:
         ks,p = stats.mstats.ks_2samp(np.hstack(pre),np.hstack(pst))
         cnn = ks
         pvalue = p
